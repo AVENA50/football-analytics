@@ -147,6 +147,21 @@ Ogni controllo di verita' su una cella che puo' essere vuota va scritto con
 `pd.notna` o `pd.isna`, mai con `if valore:`. Vale per tutto M3, dove i campi
 opzionali degli eventi StatsBomb sono la norma.
 
+### 2026-08-07 · M2-T2 · una stima sbagliata del 50 %, e il modo di accorgersene
+
+**Cosa:** avevo stimato circa 4,5 GB per lo scaricamento completo. Misurando i
+file veri di Euro 2020 — 516,9 MB per 51 partite — l'estrapolazione dice **7 GB**.
+
+**Come si e' capito:** guardando il disco invece dei propri calcoli. La stima
+veniva da un'ipotesi sulla dimensione media di un file di eventi; il numero
+reale e' 3,1 MB per gli eventi e 7,1 MB per i freeze frame.
+
+**Cosa insegna:** la stima non era irragionevole, era solo non misurata — e
+nessuno l'avrebbe controllata, perche' «circa 4,5 GB» non ha l'aria di un
+numero da verificare. E' lo stesso meccanismo che aveva reso invisibile
+l'errore del piano sulle 380 partite di Ligue 1. Un numero plausibile e non
+misurato e' il posto dove gli errori si nascondono meglio.
+
 ---
 
 <!--
