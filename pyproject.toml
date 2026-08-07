@@ -1,0 +1,162 @@
+[build-system]
+requires = ["hatchling>=1.31.0,<2"]
+build-backend = "hatchling.build"
+
+# ---------------------------------------------------------------------------
+# Metadati del pacchetto
+# ---------------------------------------------------------------------------
+
+[project]
+name = "football-analytics"
+version = "0.1.0"
+description = "Dai dati evento StatsBomb a un modello xG e a una dashboard Streamlit"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = "MIT"
+authors = [{ name = "Imad El Mir", email = "imadelmir900@gmail.com" }]
+keywords = ["football", "xg", "statsbomb", "streamlit", "machine-learning", "etl"]
+classifiers = [
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Private :: Do Not Upload",
+]
+
+# Versioni bloccate a valore esatto (==), non a intervallo.
+# Motivo: il criterio di M1-T3 e' che un'installazione da zero su una macchina
+# pulita produca ESATTAMENTE le stesse versioni. Un intervallo aperto (>=)
+# non lo garantisce: fra sei mesi pandas 3.1 potrebbe cambiare un default e la
+# pipeline darebbe numeri diversi senza che nulla nel repository sia cambiato.
+dependencies = [
+  "statsbombpy==1.22.0",
+  "pandas==3.0.5",
+  "pyarrow==24.0.0",
+  "numpy==2.5.1",
+  "scikit-learn==1.9.0",
+  "plotly==6.9.0",
+  "streamlit==1.61.1",
+]
+
+[project.optional-dependencies]
+dev = [
+  "ruff==0.16.1",
+  "mypy==2.3.0",
+  "pytest==9.1.1",
+  "pytest-cov==7.1.0",
+  "pandas-stubs==3.0.5.260730",
+  "types-requests==2.33.0.20260712",
+]
+
+[project.urls]
+Repository = "https://github.com/AVENA50/football-analytics"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/football_analytics"]
+
+# ---------------------------------------------------------------------------
+# ruff — lint e formattazione (sostituisce black + flake8 + isort)
+# ---------------------------------------------------------------------------
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests", "scripts", "app"]
+extend-exclude = ["notebooks", "data", "models"]
+
+[tool.ruff.lint]
+select = [
+  "F",    # pyflakes
+  "E",    # pycodestyle, errori
+  "W",    # pycodestyle, avvisi
+  "I",    # isort
+  "N",    # pep8-naming
+  "UP",   # pyupgrade
+  "B",    # bugbear
+  "A",    # builtins ombreggiati
+  "C4",   # comprehensions
+  "SIM",  # semplificazioni
+  "PTH",  # pathlib invece di os.path
+  "PD",   # pandas-vet
+  "NPY",  # numpy
+  "ARG",  # argomenti inutilizzati
+  "TID",  # import ordinati
+  "PL",   # pylint
+  "ANN",  # annotazioni di tipo obbligatorie
+  "D",    # docstring
+  "RUF",  # regole proprie di ruff
+]
+ignore = [
+  "D203",   # in conflitto con D211
+  "D213",   # in conflitto con D212
+  "ANN401", # a volte `Any` e' la risposta onesta
+  "PLR0913",# il numero di argomenti si valuta caso per caso
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D100", "D103", "D104", "PLR2004", "S101"]
+"scripts/**" = ["T201"]  # nei comandi da terminale il print e' l'interfaccia
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.isort]
+known-first-party = ["football_analytics"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+# ---------------------------------------------------------------------------
+# mypy — controllo statico dei tipi
+# ---------------------------------------------------------------------------
+
+[tool.mypy]
+python_version = "3.12"
+files = ["src", "tests"]
+strict = true
+warn_unreachable = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_reexport = true
+show_error_codes = true
+pretty = true
+
+# statsbombpy non distribuisce annotazioni: senza questa deroga `mypy src`
+# fallirebbe all'import, e non per un difetto del nostro codice.
+[[tool.mypy.overrides]]
+module = ["statsbombpy.*"]
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+
+[tool.pytest.ini_options]
+minversion = "9.0"
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = [
+  "-ra",
+  "--strict-markers",
+  "--strict-config",
+  "--cov=football_analytics",
+  "--cov-report=term-missing",
+]
+markers = [
+  "rete: test che richiedono una connessione (esclusi in CI con -m 'not rete')",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["src/football_analytics"]
+# Sulla macchina di sviluppo Windows, Smart App Control blocca il tracciatore in
+# C di coverage. La libreria ripiega da sola sulla versione Python — i numeri
+# sono identici, cambia solo la velocita' — ma emetteva un avviso a ogni
+# esecuzione. In CI il tracciatore in C funziona e l'avviso non compare.
+disable_warnings = ["no-ctracer"]
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+  "pragma: no cover",
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+]

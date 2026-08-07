@@ -1,0 +1,52 @@
+# --- Dati grezzi -----------------------------------------------------------
+# I JSON di StatsBomb pesano gigabyte e si riscaricano con un comando.
+# Una volta entrati nella cronologia git non si tolgono senza riscriverla.
+data/raw/*
+!data/raw/.gitkeep
+
+# I Parquet di data/processed/ SONO versionati: sono cio' che Streamlit Cloud
+# deve trovare quando clona il repository. Non aggiungerli qui.
+
+# --- Python ----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# --- Ambienti --------------------------------------------------------------
+.venv/
+venv/
+env/
+.python-version.local
+
+# --- Strumenti -------------------------------------------------------------
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.hypothesis/
+
+# --- Notebook --------------------------------------------------------------
+.ipynb_checkpoints/
+
+# --- Editor e sistema operativo -------------------------------------------
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Segreti ---------------------------------------------------------------
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml

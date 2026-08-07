@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Un push su un branch con una PR aperta annulla l'esecuzione precedente:
+# senza questo, dieci commit di fila accodano dieci esecuzioni inutili.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Due job separati e non uno solo: girano in parallelo, e quando la CI
+  # diventa rossa il nome del job dice subito se il problema e' di forma
+  # (lint, tipi) o di sostanza (un test che fallisce). Con un job unico
+  # il primo comando che fallisce nasconde tutti quelli dopo di lui.
+  qualita:
+    name: Lint e tipi
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Scaricare il repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Installare uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.2"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Installare le dipendenze bloccate
+        run: uv sync --locked --all-extras
+
+      - name: Formattazione (ruff format --check)
+        run: uv run ruff format --check .
+
+      - name: Lint (ruff check)
+        run: uv run ruff check --output-format=github .
+
+      - name: Tipi (mypy)
+        run: uv run mypy
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Scaricare il repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Installare uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.2"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Installare le dipendenze bloccate
+        run: uv sync --locked --all-extras
+
+      # I test non devono toccare la rete: i dati StatsBomb arrivano da
+      # fixture salvate in tests/fixtures/ (M3-T6). Il marcatore `rete`
+      # esiste per le eccezioni, che qui restano escluse.
+      - name: Eseguire i test
+        run: uv run pytest -m "not rete"
+
+      - name: Ridurre la cache di uv
+        run: uv cache prune --ci

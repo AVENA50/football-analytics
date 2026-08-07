@@ -1,0 +1,23 @@
+# Tema di partenza: la tavolozza "campionato" (verde, il campo).
+# Il passaggio al blu delle finali di Champions avviene a runtime riscrivendo
+# le variabili CSS --st-* (M6-T1): questo file da' solo lo stato iniziale.
+
+[theme]
+base = "light"
+primaryColor = "#0F6E56"
+backgroundColor = "#F4F7F4"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#10231B"
+borderColor = "#E3E8E3"
+baseRadius = "9px"
+
+[theme.sidebar]
+backgroundColor = "#0B3A2C"
+textColor = "#C9E8DC"
+primaryColor = "#1D9E75"
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false

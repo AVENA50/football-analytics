@@ -1,0 +1,29 @@
+# Fine riga LF ovunque, nel repository e nella copia di lavoro.
+#
+# Senza questa riga, su Windows `autocrlf` convertirebbe i file a CRLF al
+# checkout. Per i .md e i .py e' indifferente, ma uno script bash con i CRLF
+# fallisce con `$'\r': command not found` su ogni riga — e il messaggio non
+# dice da nessuna parte che il problema sono i fine riga.
+* text=auto eol=lf
+
+# Questi devono essere LF anche se qualcuno cambia le impostazioni globali.
+*.sh   text eol=lf
+*.py   text eol=lf
+*.toml text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.md   text eol=lf
+
+# Binari: nessuna conversione, nessun tentativo di diff riga per riga.
+# I Parquet e i modelli arrivano in M3 e M5, ma la regola va scritta prima:
+# un Parquet trattato come testo verrebbe corrotto al primo checkout.
+*.parquet binary
+*.pkl     binary
+*.png     binary
+*.jpg     binary
+*.webp    binary
+*.mp4     binary
+*.ipynb   -text
+
+# Non conta nelle statistiche di linguaggio del repository su GitHub.
+uv.lock linguist-generated=true
