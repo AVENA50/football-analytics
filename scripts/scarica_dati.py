@@ -59,6 +59,13 @@ def main() -> int:
         help=f"richieste in parallelo (predefinito: {ingest.LAVORATORI})",
     )
     analizzatore.add_argument(
+        "--campione",
+        type=int,
+        default=None,
+        metavar="N",
+        help="scarica solo le prime N partite, per ispezionare la forma dei dati",
+    )
+    analizzatore.add_argument(
         "--riepilogo",
         action="store_true",
         help="stampa il registro in Markdown e termina, senza scaricare niente",
@@ -76,7 +83,7 @@ def main() -> int:
     inizio = time.perf_counter()
     totali = ingest.Esito()
     for comp in scelte:
-        esito = ingest.ingerisci(comp, lavoratori=argomenti.lavoratori)
+        esito = ingest.ingerisci(comp, argomenti.lavoratori, campione=argomenti.campione)
         totali.scaricate += esito.scaricate
         totali.saltate += esito.saltate
         totali.assenti += esito.assenti
@@ -88,6 +95,10 @@ def main() -> int:
     print(f"Gia' presenti:   {totali.saltate}")
     print(f"Non pubblicati:  {totali.assenti}")
     print(f"Durata:          {durata:.1f}s")
+    if argomenti.campione is not None:
+        print("\nCampione: il registro non e' stato aggiornato.")
+        return 0
+
     print(f"\nRegistro aggiornato: {config.MANIFEST_PATH}\n")
     print(ingest.riepilogo_markdown())
     return 0
