@@ -513,6 +513,70 @@ applicare la terza toppa.
 
 ---
 
+## M5 — Modello xG
+
+### 2026-08-07 · M5-T2 · il cono e' piu' stretto di come lo si immagina
+
+**Cosa:** scrivendo i test di `nel_cono` mi aspettavo che un difensore a
+`(112, 38)`, con il tiro da `(110, 40)`, fosse davanti al pallone. E' a 2,8
+metri, sembra addosso.
+
+**Non lo e'.** A `x = 112` il triangolo fra il tiro e i due pali e' largo
+appena 1,6 metri, da `y = 39,2` a `y = 40,8`. Quel difensore e' di **fianco**,
+non davanti.
+
+**Cosa insegna:** la geometria vicino alla porta e' controintuitiva perche' il
+cono si stringe rapidamente man mano che ci si avvicina. Un test scritto «a
+occhio» avrebbe sancito il comportamento sbagliato, e da quel momento sarebbe
+stato il codice a doversi adeguare al test. C'e' un test apposta, con il
+calcolo nel commento.
+
+### 2026-08-07 · M5-T2 · il portiere e una relazione a U
+
+**Cosa:** la conversione in funzione di quanto il portiere e' uscito dalla
+linea, su 43.179 tiri:
+
+| Portiere uscito di | Tiri | Conversione |
+| --- | ---: | ---: |
+| ≤ 0,5 m — sulla linea | 855 | 14,3 % |
+| 0,5-1,5 m | 12.237 | 8,3 % |
+| 1,5-3 m | 18.359 | **7,1 %** |
+| 3-6 m | 9.564 | 11,1 % |
+| oltre 6 m | 2.128 | **26,7 %** |
+
+**Non e' monotona: e' a U.** Un portiere incollato alla linea concede il doppio
+del punto migliore; uno uscito troppo concede quasi il quadruplo. Il minimo sta
+fra 1,5 e 3 metri.
+
+**Perche' conta piu' del calcio:** una **regressione logistica non puo'
+rappresentare una U**. E' monotona nei predittori per costruzione, quindi su
+questa variabile vedra' una retta dove c'e' una parabola, e ne ricavera' un
+coefficiente vicino a zero — cioe' concludera' che la posizione del portiere
+non conta. Un gradient boosting la cattura senza sforzo.
+
+E' esattamente il motivo per cui M5-T4 e M5-T5 chiedono due modelli. La
+differenza: adesso sappiamo **in anticipo dove** il secondo dovrebbe vincere,
+quindi il confronto diventa una previsione da verificare invece di un numero
+da commentare a posteriori.
+
+### 2026-08-07 · M5-T2 · StatsBomb usa gia' i difensori nel cono
+
+**Cosa:** raggruppando per difensori nel cono, l'xG medio di StatsBomb segue la
+conversione reale quasi perfettamente — 0,129 · 0,060 · 0,051 · 0,045 contro
+0,137 · 0,059 · 0,046 · 0,045.
+
+**Cosa significa:** il loro modello vede gia' il fotogramma. Il nostro modello
+spaziale **non li battera'**, e sarebbe ingenuo aspettarselo.
+
+**Conseguenza sul racconto del progetto:** il confronto che ha senso non e'
+«noi contro StatsBomb» ma «base contro spaziale», dove misuriamo quanto vale
+un'informazione che loro hanno gia'. Il confronto con StatsBomb (M5-T8) resta,
+ma come **prova di onesta'**: dichiarare di quanto si e' peggiori di un
+fornitore professionale e' piu' credibile che scegliere una metrica su cui si
+vince.
+
+---
+
 <!--
 Le milestone successive aggiungono qui la loro sezione.
 Almeno un'annotazione per milestone: e' il criterio di M7-T6.

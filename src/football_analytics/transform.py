@@ -193,6 +193,26 @@ TIPI_GIOCATORI: Final[dict[str, str]] = {
     "sopra_soglia": "bool",
 }
 
+#: Il nome del ruolo che identifica il portiere nei fotogrammi.
+RUOLO_PORTIERE: Final[str] = "Goalkeeper"
+
+#: Tipo di dato di ogni colonna di ``freeze_frames.parquet``.
+#:
+#: Una riga per **giocatore inquadrato** al momento di un tiro: circa
+#: quattordici righe per tiro. E' la tabella piu' lunga del magazzino e resta
+#: comunque piccola, perche' ha sette colonne di cui cinque numeriche corte e
+#: uno ``shot_id`` che si ripete quattordici volte e quindi si comprime bene.
+TIPI_FOTOGRAMMI: Final[dict[str, str]] = {
+    "shot_id": "string",
+    "match_id": "int32",
+    "giocatore_id": "int32",
+    "x": "float32",
+    "y": "float32",
+    "compagno": "bool",
+    "portiere": "bool",
+    "ruolo": "category",
+}
+
 #: L'ordine delle componenti della chiave di ``passes.parquet``.
 CHIAVE_PASSAGGI: Final[tuple[str, ...]] = (
     "competizione",
@@ -867,6 +887,41 @@ def costruisci_giocatori(
     return applica_tipi(righe, TIPI_GIOCATORI)
 
 
+def righe_fotogramma(evento: dict[str, Any], match_id: int) -> list[dict[str, Any]]:
+    """Appiattisce il fotogramma di un tiro in una riga per giocatore.
+
+    Args:
+        evento: L'evento di tiro grezzo.
+        match_id: La partita a cui appartiene.
+
+    Returns:
+        Una riga per giocatore inquadrato. Lista vuota se il tiro non ha il
+        fotogramma — cosa che nell'Open Data succede quasi solo ai rigori.
+    """
+    fotogramma = evento.get("shot", {}).get("freeze_frame")
+    if not fotogramma:
+        return []
+
+    shot_id = str(evento["id"])
+    righe: list[dict[str, Any]] = []
+    for giocatore in fotogramma:
+        posizione = giocatore.get("location") or [float("nan"), float("nan")]
+        ruolo = _nome(giocatore.get("position"))
+        righe.append(
+            {
+                "shot_id": shot_id,
+                "match_id": match_id,
+                "giocatore_id": _id(giocatore.get("player")),
+                "x": float(posizione[0]),
+                "y": float(posizione[1]),
+                "compagno": bool(giocatore.get("teammate", False)),
+                "portiere": ruolo == RUOLO_PORTIERE,
+                "ruolo": ruolo,
+            }
+        )
+    return righe
+
+
 def cella(x: float, y: float) -> tuple[int, int]:
     """Converte una posizione in campo nelle coordinate della griglia.
 
@@ -965,6 +1020,7 @@ def costruisci_tabelle(
     righe_tiri: list[dict[str, Any]] = []
     righe_partite: list[dict[str, Any]] = []
     righe_presenze: list[dict[str, Any]] = []
+    righe_fotogrammi: list[dict[str, Any]] = []
     acc = Accumulatori(collections.Counter(), collections.Counter(), {})
 
     for comp in competizioni:
@@ -976,9 +1032,10 @@ def costruisci_tabelle(
             if verifica:
                 verifica_risultato(match_id, gol_per_squadra(eventi, meta), meta)
 
-            righe_tiri.extend(
-                riga_tiro(e, comp, match_id, meta) for e in eventi if _nome(e.get("type")) == "Shot"
-            )
+            tiri_partita = [e for e in eventi if _nome(e.get("type")) == "Shot"]
+            righe_tiri.extend(riga_tiro(e, comp, match_id, meta) for e in tiri_partita)
+            for e in tiri_partita:
+                righe_fotogrammi.extend(righe_fotogramma(e, match_id))
             righe_partite.append(_riga_partita(match_id, comp, meta, eventi))
             righe_presenze.extend(presenze_di_partita(match_id, comp, meta, durata_partita(eventi)))
             accumula(eventi, comp, acc, meta)
@@ -990,6 +1047,7 @@ def costruisci_tabelle(
         "player_stats": costruisci_giocatori(tiri, pd.DataFrame(righe_presenze), acc.posizioni),
         "passes": tabella_da_conteggi(acc.passaggi, CHIAVE_PASSAGGI, "passaggi", TIPI_PASSAGGI),
         "touches": tabella_da_conteggi(acc.tocchi, CHIAVE_TOCCHI, "tocchi", TIPI_TOCCHI),
+        "freeze_frames": applica_tipi(righe_fotogrammi, TIPI_FOTOGRAMMI),
     }
 
 

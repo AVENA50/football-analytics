@@ -50,10 +50,13 @@ def test_le_tabelle_coerenti_passano_i_controlli(tabelle: dict[str, pd.DataFrame
     transform.controlla(tabelle)
 
 
-def test_costruisci_tabelle_restituisce_le_cinque_tabelle(
+def test_costruisci_tabelle_restituisce_tutte_le_tabelle_dichiarate(
     tabelle: dict[str, pd.DataFrame],
 ) -> None:
-    assert set(tabelle) == {"shots", "matches", "player_stats", "passes", "touches"}
+    # Legato a config.TABELLE invece che a un elenco scritto qui: cosi'
+    # aggiungere una tabella al magazzino non lascia indietro un test che
+    # afferma il numero vecchio, come e' successo due volte.
+    assert set(tabelle) == set(config.TABELLE)
     assert len(tabelle["shots"]) == 5
     assert len(tabelle["matches"]) == 1
     assert len(tabelle["player_stats"]) == 6

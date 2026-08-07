@@ -111,6 +111,139 @@ def angolo_porta(x: npt.ArrayLike, y: npt.ArrayLike) -> npt.NDArray[np.float64]:
     return angolo
 
 
+#: Le variabili ricavate dal fotogramma del tiro.
+VARIABILI_SPAZIALI: Final[tuple[str, ...]] = (
+    "difensori_nel_cono",
+    "distanza_portiere",
+    "portiere_avanzato",
+    "avversari_vicini",
+    "compagni_in_area",
+)
+
+#: Limiti dell'area di rigore nel sistema di coordinate di StatsBomb.
+AREA_X: Final[float] = 102.0
+AREA_Y_MIN: Final[float] = 18.0
+AREA_Y_MAX: Final[float] = 62.0
+
+#: Entro quanti metri un avversario si considera addosso a chi tira.
+RAGGIO_VICINANZA: Final[float] = 3.0
+
+
+def nel_cono(
+    x: npt.ArrayLike,
+    y: npt.ArrayLike,
+    tiro_x: npt.ArrayLike,
+    tiro_y: npt.ArrayLike,
+) -> npt.NDArray[np.bool_]:
+    """Dice se un punto cade nel triangolo fra il tiro e i due pali.
+
+    E' la definizione operativa di «difensore fra il pallone e la porta»: il
+    triangolo che ha per vertici il punto del tiro e i due pali e' esattamente
+    lo spazio che un difensore puo' occupare per intercettare.
+
+    Il calcolo confronta da che parte il punto sta rispetto ai tre lati: se sta
+    sempre dalla stessa parte, e' dentro. E' il metodo dei segni — nessuna
+    divisione, quindi nessun caso degenere da gestire.
+
+    Args:
+        x: Ascissa dei giocatori da collocare.
+        y: Ordinata dei giocatori.
+        tiro_x: Ascissa del tiro, una per giocatore.
+        tiro_y: Ordinata del tiro.
+
+    Returns:
+        Vero per i giocatori dentro il triangolo, bordo compreso.
+    """
+    px = np.asarray(x, dtype=np.float64)
+    py = np.asarray(y, dtype=np.float64)
+    tx = np.asarray(tiro_x, dtype=np.float64)
+    ty = np.asarray(tiro_y, dtype=np.float64)
+
+    # Prodotto vettoriale rispetto a ciascuno dei tre lati del triangolo
+    # (tiro, palo sinistro, palo destro).
+    lato_sinistro = (px - PORTA_X) * (ty - PALO_SINISTRO_Y) - (tx - PORTA_X) * (
+        py - PALO_SINISTRO_Y
+    )
+    # Il lato fra i due pali sta tutto sulla linea di porta, quindi il termine
+    # orizzontale si annulla e resta la sola distanza dalla linea: e' positivo
+    # per chiunque sia davanti alla porta.
+    linea_di_porta = (PORTA_X - px) * LARGHEZZA_PORTA
+    lato_destro = (px - tx) * (PALO_DESTRO_Y - ty) - (PORTA_X - tx) * (py - ty)
+
+    negativo = (lato_sinistro < 0) | (linea_di_porta < 0) | (lato_destro < 0)
+    positivo = (lato_sinistro > 0) | (linea_di_porta > 0) | (lato_destro > 0)
+    dentro: npt.NDArray[np.bool_] = ~(negativo & positivo)
+    return dentro
+
+
+def variabili_spaziali(tiri: pd.DataFrame, fotogrammi: pd.DataFrame) -> pd.DataFrame:
+    """Ricava dal fotogramma le variabili che descrivono lo spazio.
+
+    **Nessuna variabile viene riempita con zeri dove il fotogramma manca.** Uno
+    zero in ``difensori_nel_cono`` significherebbe «nessun difensore davanti»,
+    che e' l'opposto di «non lo sappiamo», e insegnerebbe al modello una cosa
+    falsa. Dove il fotogramma non c'e', le variabili restano mancanti e il tiro
+    esce dall'insieme su cui il modello spaziale viene addestrato.
+
+    Args:
+        tiri: I tiri, gia' filtrati da :func:`tiri_modellabili`.
+        fotogrammi: La tabella ``freeze_frames.parquet``.
+
+    Returns:
+        Una tabella con le colonne di :data:`VARIABILI_SPAZIALI`, allineata
+        all'indice dei tiri.
+    """
+    vuoto = pd.DataFrame(
+        {colonna: np.full(len(tiri), np.nan, dtype="float32") for colonna in VARIABILI_SPAZIALI},
+        index=tiri.index,
+    )
+    if fotogrammi.empty or tiri.empty:
+        return vuoto
+
+    unito = fotogrammi.merge(
+        tiri[["shot_id", "x", "y"]].rename(columns={"x": "tiro_x", "y": "tiro_y"}),
+        on="shot_id",
+        how="inner",
+    )
+    if unito.empty:
+        return vuoto
+
+    unito["dentro"] = nel_cono(unito["x"], unito["y"], unito["tiro_x"], unito["tiro_y"])
+    unito["distanza_dal_tiro"] = np.hypot(
+        unito["x"].to_numpy() - unito["tiro_x"].to_numpy(),
+        unito["y"].to_numpy() - unito["tiro_y"].to_numpy(),
+    )
+    avversari = unito[~unito["compagno"]]
+
+    per_tiro = pd.DataFrame(index=pd.Index(fotogrammi["shot_id"].unique(), name="shot_id"))
+    per_tiro["difensori_nel_cono"] = (
+        avversari[avversari["dentro"] & ~avversari["portiere"]].groupby("shot_id").size()
+    )
+    per_tiro["avversari_vicini"] = (
+        avversari[avversari["distanza_dal_tiro"] <= RAGGIO_VICINANZA].groupby("shot_id").size()
+    )
+    compagni = unito[unito["compagno"]]
+    in_area = compagni[
+        (compagni["x"] >= AREA_X) & (compagni["y"] >= AREA_Y_MIN) & (compagni["y"] <= AREA_Y_MAX)
+    ]
+    per_tiro["compagni_in_area"] = in_area.groupby("shot_id").size()
+
+    # I conteggi mancano solo perche' il gruppo era vuoto: li' lo zero e' un
+    # fatto, non un'ipotesi — il fotogramma c'era e non conteneva nessuno.
+    for colonna in ("difensori_nel_cono", "avversari_vicini", "compagni_in_area"):
+        per_tiro[colonna] = per_tiro[colonna].fillna(0)
+
+    portieri = avversari[avversari["portiere"]].drop_duplicates(subset="shot_id")
+    portieri = portieri.set_index("shot_id")
+    per_tiro["distanza_portiere"] = portieri["distanza_dal_tiro"]
+    # Quanto il portiere e' uscito dalla linea di porta.
+    per_tiro["portiere_avanzato"] = PORTA_X - portieri["x"]
+
+    allineato = per_tiro.reindex(tiri["shot_id"])
+    allineato.index = tiri.index
+    return allineato[list(VARIABILI_SPAZIALI)].astype("float32")
+
+
 def tiri_modellabili(tiri: pd.DataFrame) -> pd.DataFrame:
     """Tiene solo i tiri che il modello xG deve vedere.
 

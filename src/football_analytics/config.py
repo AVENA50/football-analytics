@@ -317,12 +317,19 @@ PRIMA_COMPETIZIONE: Final[Competizione] = EURO_2020
 # ---------------------------------------------------------------------------
 
 #: Nomi logici delle tabelle Parquet prodotte dallo strato di trasformazione.
+#:
+#: ``freeze_frames`` non era fra le cinque tabelle del piano, ed e' una
+#: deviazione consapevole: il piano non sapeva che ``shot.freeze_frame``
+#: esistesse dentro ogni evento di tiro. Contiene la posizione di ogni
+#: giocatore inquadrato al momento del tiro, ed e' cio' da cui M5-T2 ricava i
+#: difensori nel cono e la posizione del portiere.
 TABELLE: Final[tuple[str, ...]] = (
     "shots",
     "matches",
     "player_stats",
     "passes",
     "touches",
+    "freeze_frames",
 )
 
 #: Limite oltre il quale GitHub emette un avviso su un singolo file, in byte.
