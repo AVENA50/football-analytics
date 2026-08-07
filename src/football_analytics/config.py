@@ -48,20 +48,27 @@ MANIFEST_PATH: Final[Path] = DATA_RAW / "manifest.json"
 
 
 class Copertura360(StrEnum):
-    """Quanto una competizione dispone dei freeze frame di StatsBomb.
+    """Quanto una competizione dispone dei file ``three-sixty`` di StatsBomb.
 
-    I dati 360 dicono dove stavano tutti i giocatori al momento del tiro, e
-    sono la variabile piu' utile del modello xG: quanti difensori c'erano fra
-    il pallone e la porta.
+    **Attenzione a non confonderli con i freeze frame dei tiri.** StatsBomb
+    pubblica due cose diverse:
 
-    Questo e' il valore **dichiarato** da StatsBomb nel file delle
-    competizioni. La verita' partita per partita la stabilisce M2-T4, e
-    finisce nella colonna ``has_360`` di ``shots.parquet``.
+    - ``shot.freeze_frame``, dentro l'evento di tiro, con posizione, identita'
+      e ruolo di ogni giocatore inquadrato al momento del tiro. E' presente nel
+      97 % circa dei tiri di **tutte** le competizioni, campionati del 2015/16
+      compresi, ed e' cio' che il modello xG usa;
+    - i file ``three-sixty/``, che coprono tutti gli eventi della partita e
+      aggiungono l'area inquadrata, ma non riportano nomi ne' ruoli.
+
+    Questo enum descrive **i secondi**, ed e' quindi un fatto sulla ricchezza
+    dei dati di contesto, non sulla possibilita' di addestrare il modello con
+    le variabili spaziali. La colonna corrispondente in ``shots.parquet`` si
+    chiama ``ha_fotogramma`` e riguarda il primo tipo.
 
     Attributes:
-        COMPLETA: Tutte le stagioni della competizione hanno i freeze frame.
-        ASSENTE: Nessuna li ha. Qui gira solo il modello base.
-        PARZIALE: Alcune si', altre no. Va deciso stagione per stagione.
+        COMPLETA: Tutte le stagioni della competizione hanno i file 360.
+        ASSENTE: Nessuna li ha.
+        PARZIALE: Alcune si', altre no.
     """
 
     COMPLETA = "completa"
@@ -72,17 +79,22 @@ class Copertura360(StrEnum):
 class Gruppo(StrEnum):
     """A cosa serve una competizione dentro il progetto.
 
-    La separazione nasce da un vincolo dei dati: nessun campionato completo ha
-    i freeze frame, e nessuna competizione con i freeze frame e' un campionato
-    completo. Volerle usare per la stessa cosa significherebbe scegliere fra
-    volume e ricchezza; tenerle distinte permette di avere entrambi.
+    La separazione serve alle viste, non al modello. Un confronto fra leghe ha
+    senso solo fra campionati completi della stessa stagione; un torneo a
+    eliminazione diretta non ha giornate ne' classifica e va raccontato in un
+    altro modo.
+
+    **Non e' piu' una separazione fra «con e senza freeze frame».** All'inizio
+    lo era, perche' il piano assumeva che solo alcune competizioni li avessero.
+    La verifica di M3-T1 ha mostrato che ``shot.freeze_frame`` e' presente nel
+    97 % dei tiri ovunque, campionati del 2015/16 compresi: il modello con le
+    variabili spaziali puo' girare su tutte e 1.753 le partite.
 
     Attributes:
-        CAMPIONATO: Stagioni complete di lega. Alimentano le viste
-            esplorative e il modello base. Nessun dato 360.
-        TORNEO: Tornei per nazionali con i freeze frame. Sono le partite su
-            cui base e 360 vengono addestrati e confrontati.
-        FINALI: Le finali di Champions League, su cui il modello base viene
+        CAMPIONATO: Stagioni complete di lega, stessa annata. Alimentano le
+            viste esplorative e il confronto fra campionati.
+        TORNEO: Tornei per nazionali, con in piu' i file 360 per il contesto.
+        FINALI: Le finali di Champions League, su cui il modello viene
             **applicato** a dati che non ha mai visto.
     """
 

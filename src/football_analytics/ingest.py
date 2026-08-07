@@ -146,7 +146,19 @@ def percorso_partite(competition_id: int, season_id: int) -> Path:
     Returns:
         Il percorso del file JSON corrispondente.
     """
-    return DATA_RAW / "matches" / str(competition_id) / f"{season_id}.json"
+    return cartella_partite(competition_id) / f"{season_id}.json"
+
+
+def cartella_partite(competition_id: int) -> Path:
+    """Cartella locale che raccoglie gli elenchi partite di una competizione.
+
+    Args:
+        competition_id: Identificativo della competizione.
+
+    Returns:
+        Il percorso di ``data/raw/matches/<competition_id>/``.
+    """
+    return DATA_RAW / "matches" / str(competition_id)
 
 
 def percorso_risorsa(cartella: str, match_id: int) -> Path:
@@ -400,8 +412,9 @@ def ingerisci(
     comp: Competizione,
     lavoratori: int = LAVORATORI,
     silenzioso: bool = False,
+    campione: int | None = None,
 ) -> Esito:
-    """Porta su disco tutti i dati grezzi di una competizione.
+    """Porta su disco i dati grezzi di una competizione.
 
     Rilanciarla su una competizione gia' scaricata non produce nessuna
     richiesta di contenuto: e' il criterio di completamento di M2-T2.
@@ -410,6 +423,10 @@ def ingerisci(
         comp: La competizione da scaricare.
         lavoratori: Quante richieste in parallelo.
         silenzioso: Se vero, non stampa l'avanzamento.
+        campione: Se valorizzato, si ferma alle prime N partite. Serve a
+            ispezionare la forma dei dati di una competizione senza
+            scaricarla tutta: cinque gigabyte per rispondere a una domanda
+            sono un prezzo assurdo.
 
     Returns:
         Il riepilogo dello scaricamento.
@@ -417,6 +434,8 @@ def ingerisci(
     sessione = crea_sessione()
     try:
         partite = elenca_partite(sessione, comp)
+        if campione is not None:
+            partite = partite[:campione]
         if not silenzioso:
             con_360 = sum(1 for p in partite if p.ha_360)
             print(f"{comp.etichetta}: {len(partite)} partite, {con_360} con dati 360")
@@ -424,7 +443,11 @@ def ingerisci(
     finally:
         sessione.close()
 
-    aggiorna_manifest(comp, partite)
+    # Un campione non e' la competizione: registrarlo darebbe un manifest che
+    # dichiara meno partite di quante ne esistono, e il registro smetterebbe
+    # di essere affidabile.
+    if campione is None:
+        aggiorna_manifest(comp, partite)
     return esito
 
 

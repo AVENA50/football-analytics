@@ -1,0 +1,167 @@
+[
+  {
+    "id": "aaaaaaaa-0000-0000-0000-000000000001",
+    "index": 1,
+    "period": 1,
+    "minute": 12,
+    "second": 30,
+    "type": { "id": 16, "name": "Shot" },
+    "play_pattern": { "id": 1, "name": "Regular Play" },
+    "team": { "id": 1, "name": "Casalinga" },
+    "player": { "id": 100, "name": "Attaccante Uno" },
+    "position": { "id": 23, "name": "Center Forward" },
+    "location": [110.0, 40.0],
+    "under_pressure": true,
+    "shot": {
+      "statsbomb_xg": 0.42,
+      "end_location": [120.0, 40.0, 0.5],
+      "type": { "id": 87, "name": "Open Play" },
+      "outcome": { "id": 97, "name": "Goal" },
+      "technique": { "id": 93, "name": "Normal" },
+      "body_part": { "id": 40, "name": "Right Foot" },
+      "first_time": true,
+      "freeze_frame": [
+        {
+          "location": [118.0, 40.0],
+          "player": { "id": 900, "name": "Portiere Ospite" },
+          "position": { "id": 1, "name": "Goalkeeper" },
+          "teammate": false
+        },
+        {
+          "location": [112.0, 38.0],
+          "player": { "id": 901, "name": "Difensore Ospite" },
+          "position": { "id": 3, "name": "Right Center Back" },
+          "teammate": false
+        },
+        {
+          "location": [108.0, 44.0],
+          "player": { "id": 101, "name": "Attaccante Due" },
+          "position": { "id": 22, "name": "Right Center Forward" },
+          "teammate": true
+        }
+      ]
+    }
+  },
+  {
+    "id": "aaaaaaaa-0000-0000-0000-000000000002",
+    "index": 2,
+    "period": 2,
+    "minute": 61,
+    "second": 5,
+    "type": { "id": 16, "name": "Shot" },
+    "play_pattern": { "id": 2, "name": "From Corner" },
+    "team": { "id": 2, "name": "Ospite" },
+    "player": { "id": 200, "name": "Ospite Uno" },
+    "position": { "id": 24, "name": "Left Center Forward" },
+    "location": [100.0, 30.0],
+    "shot": {
+      "statsbomb_xg": 0.05,
+      "end_location": [120.0, 30.0, 3.0],
+      "type": { "id": 87, "name": "Open Play" },
+      "outcome": { "id": 98, "name": "Off T" },
+      "technique": { "id": 95, "name": "Volley" },
+      "body_part": { "id": 38, "name": "Left Foot" }
+    }
+  },
+  {
+    "id": "aaaaaaaa-0000-0000-0000-000000000003",
+    "index": 3,
+    "period": 4,
+    "minute": 118,
+    "second": 40,
+    "type": { "id": 16, "name": "Shot" },
+    "play_pattern": { "id": 1, "name": "Regular Play" },
+    "team": { "id": 2, "name": "Ospite" },
+    "player": { "id": 201, "name": "Ospite Due" },
+    "position": { "id": 23, "name": "Center Forward" },
+    "location": [114.0, 38.0],
+    "shot": {
+      "statsbomb_xg": 0.61,
+      "end_location": [120.0, 38.0, 1.0],
+      "type": { "id": 87, "name": "Open Play" },
+      "outcome": { "id": 97, "name": "Goal" },
+      "technique": { "id": 93, "name": "Normal" },
+      "body_part": { "id": 37, "name": "Head" },
+      "aerial_won": true
+    }
+  },
+  {
+    "id": "aaaaaaaa-0000-0000-0000-000000000004",
+    "index": 4,
+    "period": 5,
+    "minute": 121,
+    "second": 0,
+    "type": { "id": 16, "name": "Shot" },
+    "play_pattern": { "id": 9, "name": "From Kick Off" },
+    "team": { "id": 1, "name": "Casalinga" },
+    "player": { "id": 102, "name": "Rigorista Uno" },
+    "position": { "id": 23, "name": "Center Forward" },
+    "location": [108.0, 40.0],
+    "shot": {
+      "statsbomb_xg": 0.76,
+      "end_location": [120.0, 40.0, 1.0],
+      "type": { "id": 88, "name": "Penalty" },
+      "outcome": { "id": 97, "name": "Goal" },
+      "technique": { "id": 93, "name": "Normal" },
+      "body_part": { "id": 40, "name": "Right Foot" }
+    }
+  },
+  {
+    "id": "aaaaaaaa-0000-0000-0000-000000000005",
+    "index": 5,
+    "period": 5,
+    "minute": 122,
+    "second": 0,
+    "type": { "id": 16, "name": "Shot" },
+    "play_pattern": { "id": 9, "name": "From Kick Off" },
+    "team": { "id": 2, "name": "Ospite" },
+    "player": { "id": 202, "name": "Rigorista Due" },
+    "position": { "id": 23, "name": "Center Forward" },
+    "location": [108.0, 40.0],
+    "shot": {
+      "statsbomb_xg": 0.76,
+      "end_location": [120.0, 44.0, 4.0],
+      "type": { "id": 88, "name": "Penalty" },
+      "outcome": { "id": 98, "name": "Off T" },
+      "technique": { "id": 93, "name": "Normal" },
+      "body_part": { "id": 40, "name": "Right Foot" }
+    }
+  },
+  {
+    "id": "aaaaaaaa-0000-0000-0000-000000000006",
+    "index": 6,
+    "period": 2,
+    "minute": 75,
+    "second": 12,
+    "type": { "id": 25, "name": "Own Goal For" },
+    "play_pattern": { "id": 1, "name": "Regular Play" },
+    "team": { "id": 1, "name": "Casalinga" },
+    "location": [4.0, 40.0]
+  },
+  {
+    "id": "aaaaaaaa-0000-0000-0000-000000000007",
+    "index": 7,
+    "period": 2,
+    "minute": 75,
+    "second": 12,
+    "type": { "id": 20, "name": "Own Goal Against" },
+    "play_pattern": { "id": 1, "name": "Regular Play" },
+    "team": { "id": 2, "name": "Ospite" },
+    "player": { "id": 203, "name": "Sfortunato" },
+    "position": { "id": 5, "name": "Left Center Back" },
+    "location": [4.0, 40.0]
+  },
+  {
+    "id": "aaaaaaaa-0000-0000-0000-000000000008",
+    "index": 8,
+    "period": 1,
+    "minute": 3,
+    "second": 0,
+    "type": { "id": 30, "name": "Pass" },
+    "play_pattern": { "id": 1, "name": "Regular Play" },
+    "team": { "id": 1, "name": "Casalinga" },
+    "player": { "id": 103, "name": "Regista" },
+    "position": { "id": 13, "name": "Right Center Midfield" },
+    "location": [60.0, 40.0]
+  }
+]

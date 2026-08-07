@@ -164,6 +164,71 @@ misurato e' il posto dove gli errori si nascondono meglio.
 
 ---
 
+## M3 — Trasformazione
+
+### 2026-08-07 · M3-T1 · i freeze frame erano ovunque, e non me n'ero accorto
+
+**Cosa:** aprendo un evento di tiro per capire come costruire `shots.parquet`,
+`shot.freeze_frame` era li' dentro — posizione, nome e ruolo di ogni giocatore
+al momento del tiro. Non nei file `three-sixty/`: **dentro l'evento**.
+
+**Come si e' capito:** contando. Un campione di tre partite di Serie A 2015/16
+e tre finali di Champions, competizioni che il piano dava per prive di dati
+spaziali:
+
+| Competizione | Tiri | Con `shot.freeze_frame` |
+| --- | ---: | ---: |
+| Serie A 2015/16 | 66 | 64 (97 %) |
+| Euro 2020 | 1.289 | 1.247 (97 %) |
+| Finali Champions 2017-2019 | 85 | 84 (99 %) |
+
+**Perche' e' la scoperta piu' grossa finora:** l'intera architettura si reggeva
+sull'idea che solo alcune competizioni permettessero il modello con le
+variabili spaziali. Era falso. La domanda centrale del progetto — quanto vale
+sapere dove sono i difensori — passa da ~5.500 tiri a ~44.000, e con quel
+volume la differenza fra i due modelli diventa misurabile invece che
+indicativa.
+
+**I due freeze frame, per non confonderli mai piu':**
+
+| | `shot.freeze_frame` | file `three-sixty/` |
+| --- | --- | --- |
+| Dove | dentro l'evento di tiro | file separato, 6,5 MB a partita |
+| Quando | solo al momento del tiro | tutti i 3.400 eventi |
+| Contiene | posizione, **nome**, **ruolo**, compagno si/no | posizione, compagno, portiere, attore |
+| In piu' | — | area inquadrata dalla telecamera |
+| Disponibile | ~97 % dei tiri, ovunque | solo alcune competizioni |
+
+Per il modello xG serve il primo, ed e' anche il piu' ricco: sapere che il
+difensore piu' vicino e' un centrale invece di un terzino e' informazione che
+i file 360 non hanno.
+
+**Cosa insegna:** avevo verificato *quali competizioni hanno i file 360* e mi
+ero fermato li', perche' la risposta confermava il piano. Non avevo verificato
+*cosa serve davvero al modello*. Confermare l'ipotesi che si aveva in testa e'
+il momento in cui si smette di guardare — ed e' esattamente quando bisognerebbe
+guardare meglio.
+
+### 2026-08-07 · M3-T1 · la fixture sbagliata, smascherata dal suo stesso test
+
+**Cosa:** avevo scritto una fixture dichiarando che la partita finiva 2 a 2. Il
+test e' fallito: gli eventi dicevano 2 a 1.
+
+**Chi aveva ragione:** il codice. Contando a mano — un gol su azione della
+Casalinga, un autogol a suo favore, un gol dell'Ospite nei supplementari, due
+rigori finali che non contano — fa 2 a 1. Il numero nei metadati era mio, e
+sbagliato.
+
+**Cosa insegna:** e' esattamente il meccanismo che dovra' proteggere il
+progetto quando i dati saranno 1.753 partite invece di una inventata. Se un
+test scritto apposta per verificare i risultati smaschera chi l'ha scritto,
+funziona. E la fixture corretta e' finita per essere migliore: i modi
+plausibili di sbagliare quel conteggio sono **tre** — ignorare l'autogol
+(1 a 1), includere i rigori finali (3 a 1), contare l'autogol per entrambe le
+squadre (2 a 2) — e ora c'e' un test per ciascuno.
+
+---
+
 <!--
 Le milestone successive aggiungono qui la loro sezione.
 Almeno un'annotazione per milestone: e' il criterio di M7-T6.

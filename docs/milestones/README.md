@@ -17,7 +17,7 @@ più.
 | --- | --- | --- | --- | --- |
 | M1 | Fondamenta | 7 | 🟢 conclusa | [M1-fondamenta.md](M1-fondamenta.md) |
 | M2 | Ingestione | 7 | 🟡 in corso | [M2-ingestione.md](M2-ingestione.md) |
-| M3 | Trasformazione | 8 | ⚪ da fare | — |
+| M3 | Trasformazione | 8 | 🟡 in corso | [M3-trasformazione.md](M3-trasformazione.md) |
 | M4 | Esplorazione | 3 | ⚪ da fare | — |
 | M5 | Modello xG | 12 | ⚪ da fare | — |
 | M6 | Dashboard | 14 | ⚪ da fare | — |
