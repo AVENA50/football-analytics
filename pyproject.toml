@@ -110,7 +110,7 @@ docstring-code-format = true
 
 [tool.mypy]
 python_version = "3.12"
-files = ["src", "tests"]
+files = ["src", "tests", "scripts"]
 strict = true
 warn_unreachable = true
 warn_unused_ignores = true

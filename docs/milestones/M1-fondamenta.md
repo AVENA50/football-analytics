@@ -3,16 +3,46 @@
 > Il repository esiste, il codice si installa con un comando, e lint, tipi e
 > test girano da soli a ogni push.
 
-**Periodo:** dal 2026-08-07 al \_\_ · **Issue chiuse:** \_\_ / 7 · **Commit:** \_\_
+**Periodo:** 2026-08-07, in giornata · **Issue chiuse:** 7 / 7 · **Commit:** 3
+
+Il commit iniziale, che ha creato `main` e non poteva passare da una pull
+request perché il ramo di destinazione non esisteva ancora, più due sul branch
+`m1-t7-relazione`, uniti in squash. Su `main` se ne vedono quindi due: da qui in
+avanti ogni modifica passa da una PR, perché `main` è protetto.
 
 ---
 
 ## 1. Cosa è stato costruito
 
-<!-- Da completare a fine milestone. Traccia: prima di M1 non esisteva niente;
-adesso esiste un pacchetto Python installabile, con una struttura a quattro
-strati già predisposta, dipendenze bloccate a versione esatta, e una CI che
-impedisce a codice non formattato o non tipizzato di entrare in main. -->
+Prima di M1 il progetto era due documenti: un piano e un backlog. Adesso è un
+pacchetto Python installabile.
+
+Chi clona il repository ed esegue un solo comando — `uv sync --all-extras` —
+ottiene in circa cinque secondi un ambiente identico a quello di sviluppo, fino
+all'ultima dipendenza indiretta. Non è una promessa: le versioni risolte su
+Linux in fase di stesura del `pyproject.toml` e quelle installate su Windows
+coincidono una per una, ed è il modo in cui il criterio di M1-T3 è stato
+verificato invece che dichiarato.
+
+La struttura a quattro strati descritta nel piano esiste come cartelle e come
+vincolo. `src/football_analytics/` è il pacchetto, `app/` la dashboard,
+`scripts/` i comandi da terminale, `data/processed/` il magazzino che la
+dashboard leggerà. Il codice degli strati 1, 2 e 3 arriva da M2 in poi, ma il
+confine che conta — la dashboard non importa mai l'ingestione — è già disegnato,
+e disegnarlo prima costa niente mentre spostarlo dopo costa una riscrittura.
+
+Il pezzo che cambia il modo di lavorare, però, è la CI. Da adesso ogni push e
+ogni pull request passano attraverso `ruff format`, `ruff check`, `mypy` in
+modalità strict e `pytest`, in due job che girano in parallelo. Codice non
+formattato o non tipizzato non entra in `main` — non per disciplina personale,
+che dopo tre giorni cede, ma perché la macchina lo rifiuta. Il primo controllo
+completo ha impiegato 23 secondi.
+
+Infine il backlog ha smesso di essere un documento e ha cominciato a essere uno
+strumento: 11 etichette, 8 milestone, 64 issue e una bacheca Projects che le
+raggruppa, tutto generato da due script versionati nel repository. Se domani il
+piano cambia, si modifica lo script e si rigenera, invece di aprire 64 form nel
+browser.
 
 ## 2. File creati e modificati
 
@@ -32,7 +62,9 @@ impedisce a codice non formattato o non tipizzato di entrare in main. -->
 | `docs/milestones/README.md` | Indice e stato di avanzamento |
 | `README.md` | Descrizione, installazione, **attribuzione a StatsBomb** |
 | `NOTES.md` | Il diario degli inciampi |
+| `.gitattributes` | Forza LF ovunque; senza, `setup-backlog.sh` prenderebbe i CRLF e fallirebbe |
 | `setup-backlog.sh` | Crea su GitHub 11 etichette, 8 milestone e 64 issue |
+| `scripts/setup_project.py` | Costruisce la bacheca Projects dal backlog, in modo ripartibile |
 
 ## 3. Decisioni tecniche
 
@@ -130,11 +162,74 @@ dimostrare.
 
 ## 5. Problemi incontrati
 
-<!-- Le annotazioni si aggiungono in NOTES.md mentre si lavora e si riportano
-qui in forma discorsiva a fine milestone. -->
+Le annotazioni a caldo sono in [`NOTES.md`](../../NOTES.md). Qui la versione
+discorsiva, con quello che si è imparato.
 
-Vedi [`NOTES.md`](../../NOTES.md) — al momento: il conflitto fra
-`streamlit==1.61.1` e `pyarrow==25`, risolto scegliendo `pyarrow==24.0.0`.
+### Un conflitto di versioni fra streamlit e pyarrow
+
+Chiedendo a entrambi l'ultima versione disponibile, il risolutore restituiva
+`streamlit==1.59.1` invece della `1.61.1`. Fissando streamlit al valore atteso
+è emerso il motivo: la 1.61.1 vincola `pyarrow<25`, quindi per tenere pyarrow 25
+il risolutore stava retrocedendo streamlit senza dirlo.
+
+Scelto streamlit 1.61.1 con pyarrow 24.0.0. Fra le due, streamlit è la
+dipendenza che decide cosa la dashboard può fare — `st.navigation`, `on_select`
+sulle tabelle, cioè M6-T5 — mentre pyarrow 24 legge e scrive Parquet
+esattamente come la 25.
+
+**Cosa insegna:** un risolutore che retrocede un pacchetto non è un errore e non
+emette avvisi. Se non si guarda l'elenco risolto riga per riga, ci si ritrova
+con una versione più vecchia di quella che si credeva di aver scelto, e lo si
+scopre mesi dopo quando una funzione «documentata» non esiste.
+
+### Windows blocca i binari non firmati, e lo dice male
+
+È il problema che ha occupato la maggior parte della milestone, e si è
+presentato due volte.
+
+La prima come fallimento di `uv sync`, con
+`ImportError: DLL load failed while importing _socket`. Il percorso nella
+traccia — `AppData\Roaming\uv\python\cpython-3.12-...` — indicava che il file
+bloccato non era del progetto ma dell'interprete: Smart App Control impedisce
+l'esecuzione di binari non firmati nelle cartelle utente, e le distribuzioni
+python-build-standalone usate da uv non sono firmate da Microsoft. Risolto
+installando il Python 3.12 ufficiale, che è firmato, e disinstallando quello
+gestito da uv.
+
+La seconda, subito dopo, come fallimento di `mypy` e come avviso di `coverage`:
+lo stesso blocco applicato ai binari delle librerie invece che a quelli di
+Python. `mypy` viene distribuito compilato con mypyc, `coverage` include un
+tracciatore in C. `ruff` invece passa, perché è un unico eseguibile Rust senza
+DLL da caricare. Risolto costruendo mypy da sorgente in versione pura Python,
+tramite la variabile d'ambiente utente `UV_NO_BINARY_PACKAGE=mypy`, e
+silenziando l'avviso di coverage, che ripiega già da sola sul tracciatore Python
+producendo numeri identici.
+
+**Cosa insegna, e vale più della soluzione:** fra i due episodi c'è stato un
+falso allarme che è costato più tempo del problema vero. Il sospetto era che
+fossero bloccate anche pandas, numpy e pyarrow — nel qual caso il progetto non
+sarebbe girato affatto su questa macchina, e la milestone si sarebbe fermata su
+una scelta seria. Un `import` esplicito di tutte e sei le librerie pesanti ha
+risposto `TUTTO OK`. Il comando *sembrava* bloccato ma era soltanto lento:
+`streamlit` e `sklearn` al primo import impiegano diversi secondi, e un
+antivirus che ispeziona ogni DLL peggiora l'attesa. **Prima di dichiarare un
+blocco, verificare che non sia lentezza.**
+
+### Due inciampi minori su Windows
+
+`bash setup-backlog.sh` finiva su WSL, che non ha nessuna distribuzione
+installata, con `execvpe(/bin/bash) failed`. Va invocato il bash di Git for
+Windows per percorso esplicito.
+
+E `git add` avvisava che avrebbe convertito i file a CRLF. Per i `.md` e i `.py`
+è indifferente, ma uno script bash con i CRLF fallisce con `$'\r': command not
+found` su ogni riga — e il messaggio non dice da nessuna parte che il problema
+sono i fine riga. Aggiunto un `.gitattributes` che impone LF, **prima** del
+primo commit: dopo, sarebbe stata una riscrittura della cronologia.
+
+Per la stessa ragione lo script che costruisce la bacheca Projects è stato
+scritto in Python e non in bash — evita sia WSL sia la dipendenza da `jq`, che
+Git for Windows non installa.
 
 ## 6. Cosa resta aperto
 
