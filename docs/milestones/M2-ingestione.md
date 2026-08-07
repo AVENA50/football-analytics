@@ -4,19 +4,28 @@
 > competizioni sono quelle che esistono davvero, non quelle che il piano
 > presumeva.
 
-**Periodo:** dal 2026-08-07 al \_\_ · **Issue chiuse:** \_\_ / 7 · **Commit:** \_\_
-
-> Questo file viene compilato **mentre** la milestone procede, non alla fine.
-> Le sezioni con `__` sono ancora aperte.
+**Periodo:** 2026-08-07, in giornata · **Issue chiuse:** 7 / 7 · **Commit:** 4
 
 ---
 
 ## 1. Cosa è stato costruito
 
-<!-- Da completare a fine milestone. -->
+Prima di M2 il progetto sapeva trasformare dati che non aveva. Adesso ha
+**1.753 partite** su disco — 6,25 GB di JSON grezzo — scaricate da un comando
+che si può interrompere e rilanciare senza perdere niente.
 
-Finora: il registro delle competizioni in `config.py`, verificato contro
-StatsBomb, e lo script che ha permesso di verificarlo.
+Il pezzo che rende possibile tutto il resto è la ripartenza. Non è una comodità:
+migliaia di richieste separate a GitHub significano che *qualcosa* andrà storto,
+e senza ripartenza ogni interruzione ricomincia da zero. Rilanciare
+l'ingestione su dati già presenti termina in meno di un secondo con zero
+richieste di contenuto, e lo si verifica contando le chiamate, non
+cronometrando.
+
+Ma la cosa che questa milestone ha davvero prodotto non è il download: è la
+**correzione del piano**. Le competizioni scelte all'inizio avevano un decimo
+delle partite previste, e nessuno lo sapeva perché i numeri sembravano giusti.
+Il progetto che esce da M2 lavora su fonti verificate una per una, e ogni
+numero in `config.py` è confrontato con StatsBomb da un test.
 
 ## 2. File creati e modificati
 
@@ -154,32 +163,100 @@ completamento di M2-T2, verificato sul campo oltre che nei test.
 La stima iniziale era di 4,5 GB ed era sbagliata del 50 %: veniva da un'ipotesi
 sulla dimensione dei file, non da una misura. Ora viene da 51 partite reali.
 
-| Cosa | Valore |
-| --- | --- |
-| Durata dello scaricamento completo | \_\_ |
-| Peso finale di `data/raw/` | \_\_ |
+### Lo scaricamento completo
+
+| Competizione | Gruppo | Partite | Attese | Con file 360 | Peso |
+| --- | --- | ---: | ---: | ---: | ---: |
+| La Liga 2015/16 | campionato | 380 | 380 | 0 | 1.076 MB |
+| Premier League 2015/16 | campionato | 380 | 380 | 0 | 1.083 MB |
+| Serie A 2015/16 | campionato | 380 | 380 | 0 | 1.111 MB |
+| Ligue 1 2015/16 | campionato | 377 | 377 | 0 | 1.115 MB |
+| Coppa del Mondo 2022 | torneo | 64 | 64 | 64 | 630 MB |
+| Coppa d'Africa 2023 | torneo | 52 | 52 | **1** | 134 MB |
+| Campionato Europeo 2024 | torneo | 51 | 51 | 51 | 535 MB |
+| Campionato Europeo 2020 | torneo | 51 | 51 | 51 | 517 MB |
+| Finali di Champions | finali | 18 | 18 | 0 | 54 MB |
+| **Totale** | | **1.753** | **1.753** | **167** | **6.255 MB** |
+
+**Tutti i conteggi coincidono con gli attesi.** Sono gli stessi numeri
+verificati in M2-T1 contro l'indice di StatsBomb, ritrovati contando i file su
+disco.
+
+| Cosa | Valore | Come |
+| --- | --- | --- |
+| File scaricati | 3.699 | 1.753 eventi + 1.753 formazioni + 167 freeze frame + 26 elenchi |
+| Peso di `data/raw/` | 6,25 GB | eventi 5,0 GB · 360 1,2 GB · formazioni 37 MB |
+| Peso medio, partita senza 360 | 2,92 MB | Serie A 2015/16 |
+| Peso medio, partita con 360 | 10,1 MB | Euro 2020 |
+| Velocità | ~22 file al secondo | 760 file di Serie A in 34,1 s |
+| Seconda esecuzione | 0 file, 0,0 s | il criterio di M2-T2 |
+| File `.parziale` rimasti | 0 | la scrittura atomica non lascia residui |
+
+### La disponibilità dei dati 360 (M2-T4)
+
+Il campo `match_status_360` ha **quattro** valori, non due, e solo il primo
+significa che il file esiste:
+
+| Competizione | `available` | `processing` | `scheduled` | `unscheduled` |
+| --- | ---: | ---: | ---: | ---: |
+| Euro 2020 | 51 | | | |
+| Euro 2024 | 51 | | | |
+| Coppa del Mondo 2022 | 64 | | | |
+| **Coppa d'Africa 2023** | **1** | | | 51 |
+| Premier League 2015/16 | | 200 | 180 | |
+| La Liga 2015/16 | | | 33 | 347 |
+| Serie A 2015/16 | | | | 380 |
+| Ligue 1 2015/16 | | | | 377 |
+| Finali di Champions | | | 16 | 2 |
+
+`scheduled` e `processing` dicono che StatsBomb **ha in programma** di produrre
+quei dati. Sono promesse, non file — e trattarle come disponibili avrebbe
+prodotto un progetto che si aspetta 380 partite di Premier League con i freeze
+frame e ne trova zero.
 
 ## 5. Problemi incontrati
 
-Il racconto a caldo è in [`NOTES.md`](../../NOTES.md). In sintesi: il piano si
-sbagliava su metà delle competizioni, e la prima versione dello script di
-esplorazione dichiarava i dati 360 disponibili ovunque perché `bool(NaN)` in
-Python vale `True`.
+Il racconto a caldo è in [`NOTES.md`](../../NOTES.md). Tre episodi, con un
+filo comune.
 
-<!-- Il resto si aggiunge man mano. -->
+**Il piano si sbagliava su metà delle competizioni.** Ligue 1 2021/22 doveva
+avere 380 partite e ne ha 26; Bundesliga 2023/24 doveva averne 306 e ne ha 34.
+StatsBomb pubblica anche sottoinsiemi tematici — le partite di Messi, la
+stagione del Leverkusen — e i numeri del piano erano plausibili ma mai
+verificati.
+
+**`bool(NaN)` vale `True`.** La prima versione dello script di esplorazione
+dichiarava i dati 360 disponibili per tutte e quaranta le stagioni, comprese
+quelle che sicuramente non li avevano. Con pandas il valore mancante non è
+falso, e ogni controllo di verità su una cella che può essere vuota va scritto
+con `pd.notna`.
+
+**L'indice competizioni mente per omissione.** Avevo dichiarato la Coppa
+d'Africa 2023 coperta dai dati 360 fidandomi del campo `match_available_360`,
+che è a livello di competizione e diventa non nullo anche se **una sola**
+partita ha i file. Su 52 ne ha una. Il dato affidabile è `match_status_360`,
+partita per partita. Il test di rete ora legge quello.
+
+Il filo comune: **ogni volta la fonte sbagliata era quella più comoda da
+leggere.** Un numero nel piano, un campo aggregato, una cella che sembra falsa.
+La fonte giusta costava sempre un passo in più.
 
 ## 6. Cosa resta aperto
 
-- **Il peso dei Parquet è un rischio noto.** 1.517 partite di campionato sono
-  circa il 40 % in più di quanto il piano prevedeva. `passes` e `touches`
-  andranno aggregati a monte per stare sotto i limiti di M3-T7.
-- **Le finali di Champions dichiarano `ASSENTE` per i 360.** Il piano diceva
-  «parziale»; il valore attuale viene dal campo dichiarato da StatsBomb e lo
-  verifica un test di rete. Se M2-T4 trovasse freeze frame in qualche finale
-  recente, il valore va corretto.
+- **I file 360 sono scaricati ma quasi inutili.** M3-T1 ha scoperto che al
+  modello xG serve `shot.freeze_frame`, che sta dentro gli eventi ed è presente
+  nel 95-99 % dei tiri di **tutte** le competizioni. Gli 1,2 GB di
+  `three-sixty/` coprono anche gli eventi diversi dai tiri, cosa che nessuna
+  delle nove viste usa. Sono stati tenuti per scelta esplicita, come riserva
+  per analisi spaziali future.
+- **`data/raw/` pesa 6,25 GB** e non è versionato, giustamente. Chi clona il
+  repository deve rieseguire lo scaricamento: dieci minuti, documentati nel
+  README.
+- **La Coppa d'Africa 2023 resta nel gruppo dei tornei** pur avendo un file 360
+  su 52. La scelta è consapevole: i gruppi separano per **tipo di
+  competizione**, non per ricchezza dei dati, e ciò che serve al modello lì c'è.
 - **I frammenti di club con i 360 restano inutilizzati**: 101 partite scartate
-  per una ragione metodologica, non tecnica. Se un domani servisse più volume
-  per il modello 360, sono la prima riserva.
+  per una ragione metodologica, non tecnica. Riguardano una squadra sola.
 
 ## 7. Come verificarlo
 

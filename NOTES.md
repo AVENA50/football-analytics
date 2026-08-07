@@ -305,6 +305,44 @@ introdotto l'anomalia e' peggio di nessun test, perche' da' fiducia
 ingiustificata. Quando si scrive un test che si aspetta un fallimento, va
 verificato **anche** che la condizione di partenza fosse sana.
 
+### 2026-08-07 · M2-T4 · l'indice competizioni mente per omissione
+
+**Cosa:** avevo dichiarato la Coppa d'Africa 2023 coperta dai dati 360.
+Scaricandola, il manifest ha riportato **1 partita su 52**.
+
+**Come si e' capito:** dal peso. 134 MB contro i ~530 delle altre competizioni
+con i 360. Un numero che non torna con gli altri numeri.
+
+**La causa:** il campo `match_available_360` dell'indice competizioni e'
+**a livello di competizione**, e diventa non nullo anche se una sola partita ha
+i file. Il dato affidabile e' `match_status_360` nel file delle partite, che ha
+quattro valori:
+
+| valore | significato |
+| --- | --- |
+| `available` | il file esiste |
+| `processing` | StatsBomb lo sta producendo |
+| `scheduled` | ha in programma di produrlo |
+| `unscheduled` | non e' previsto |
+
+Solo il primo e' un file. Gli altri sono promesse — e la Premier League 2015/16
+ne ha 200 in `processing` e 180 in `scheduled`, cioe' zero file e 380 promesse.
+
+**Risolto:** Coppa d'Africa portata a `PARZIALE`, e il test di rete riscritto
+per contare gli stati partita per partita invece di leggere l'indice.
+Rinominato anche `TORNEI_360` in `TORNEI`: il nome vecchio affermava una cosa
+falsa.
+
+**Il modello non ne risente:** nella Coppa d'Africa `shot.freeze_frame` c'e'
+nel 95 % dei tiri. E' la conferma pratica di quanto contasse distinguere i due
+tipi di fotogramma.
+
+**Cosa insegna, ed e' il filo di tutta M2:** ogni volta che mi sono sbagliato,
+la fonte sbagliata era **quella piu' comoda da leggere**. Un numero scritto nel
+piano invece di contare le partite. Un campo aggregato invece di scorrere le
+righe. Una cella che sembra falsa invece di chiedere a `pd.notna`. La fonte
+giusta costava sempre un passo in piu', e quel passo e' esattamente il lavoro.
+
 ---
 
 <!--

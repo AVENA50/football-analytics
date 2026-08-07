@@ -65,8 +65,16 @@ class Copertura360(StrEnum):
     le variabili spaziali. La colonna corrispondente in ``shots.parquet`` si
     chiama ``ha_fotogramma`` e riguarda il primo tipo.
 
+    **Il valore va letto partita per partita, non dall'indice.** Il campo
+    ``match_available_360`` dell'indice competizioni diventa non nullo anche se
+    una sola partita ha i file: la Coppa d'Africa 2023 risulta cosi' coperta,
+    e invece su 52 partite ne ha **una**. Il dato affidabile e'
+    ``match_status_360`` nel file delle partite, che vale ``available``,
+    ``scheduled``, ``processing`` o ``unscheduled``: solo il primo significa
+    che il file esiste davvero.
+
     Attributes:
-        COMPLETA: Tutte le stagioni della competizione hanno i file 360.
+        COMPLETA: Tutte le partite hanno i file 360.
         ASSENTE: Nessuna li ha.
         PARZIALE: Alcune si', altre no.
     """
@@ -205,12 +213,16 @@ LIGUE_1_2015_16: Final[Competizione] = Competizione(
     partite_attese=377,
 )
 
-# --- I tornei per nazionali con i dati 360 ---------------------------------
+# --- I tornei per nazionali ------------------------------------------------
 #
-# Sono le uniche competizioni **complete** dell'Open Data ad avere i freeze
-# frame. I frammenti di club che li possiedono (La Liga 2020/21, Bundesliga
-# 2023/24, Ligue 1 2021/22 e 2022/23) restano fuori: riguardano una squadra
-# sola, quindi il campione non e' rappresentativo del campionato da cui viene.
+# Restano fuori i frammenti di club (La Liga 2020/21, Bundesliga 2023/24,
+# Ligue 1 2021/22 e 2022/23): riguardano una squadra sola, quindi il campione
+# non e' rappresentativo del campionato da cui viene.
+#
+# Tre di questi quattro hanno anche i file 360 su tutte le partite. La Coppa
+# d'Africa no — ne ha una su 52 — ma resta nel gruppo: i tornei stanno insieme
+# per **tipo di competizione**, e cio' che serve al modello xG e'
+# ``shot.freeze_frame``, presente nel 95 % dei suoi tiri.
 
 MONDIALI_2022: Final[Competizione] = Competizione(
     chiave="mondiali_2022",
@@ -230,7 +242,8 @@ COPPA_AFRICA_2023: Final[Competizione] = Competizione(
     competition_id=1267,
     season_id=107,
     gruppo=Gruppo.TORNEO,
-    copertura_360=Copertura360.COMPLETA,
+    # Una partita su 52. L'indice competizioni la dichiarava coperta.
+    copertura_360=Copertura360.PARZIALE,
     partite_attese=52,
 )
 
@@ -277,8 +290,8 @@ CAMPIONATI: Final[tuple[Competizione, ...]] = (
     LIGUE_1_2015_16,
 )
 
-#: I tornei con i freeze frame: qui base e 360 si confrontano.
-TORNEI_360: Final[tuple[Competizione, ...]] = (
+#: I tornei per nazionali.
+TORNEI: Final[tuple[Competizione, ...]] = (
     MONDIALI_2022,
     COPPA_AFRICA_2023,
     EURO_2024,
@@ -288,7 +301,7 @@ TORNEI_360: Final[tuple[Competizione, ...]] = (
 #: Tutte le competizioni del progetto.
 COMPETIZIONI: Final[tuple[Competizione, ...]] = (
     *CAMPIONATI,
-    *TORNEI_360,
+    *TORNEI,
     CHAMPIONS_FINALI,
 )
 
