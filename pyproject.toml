@@ -46,6 +46,10 @@ dev = [
   "pytest-cov==7.1.0",
   "pandas-stubs==3.0.5.260730",
   "types-requests==2.33.0.20260712",
+  # Solo per i notebook di esplorazione (M4). Non servono all'app: Streamlit
+  # Cloud installa da requirements.txt, che rispecchia le dipendenze runtime.
+  "jupyterlab==4.6.2",
+  "nbformat==5.11.0",
 ]
 
 [project.urls]

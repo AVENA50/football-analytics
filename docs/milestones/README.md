@@ -18,7 +18,7 @@ più.
 | M1 | Fondamenta | 7 | 🟢 conclusa | [M1-fondamenta.md](M1-fondamenta.md) |
 | M2 | Ingestione | 7 | 🟢 conclusa | [M2-ingestione.md](M2-ingestione.md) |
 | M3 | Trasformazione | 8 | 🟢 conclusa | [M3-trasformazione.md](M3-trasformazione.md) |
-| M4 | Esplorazione | 3 | ⚪ da fare | — |
+| M4 | Esplorazione | 3 | 🟢 conclusa | [M4-esplorazione.md](M4-esplorazione.md) |
 | M5 | Modello xG | 12 | ⚪ da fare | — |
 | M6 | Dashboard | 14 | ⚪ da fare | — |
 | M7 | Pubblicazione | 7 | ⚪ da fare | — |
@@ -44,6 +44,10 @@ ricalcolano a mano.
 | Tiri con freeze frame | 43.264 — 99 % | M3 |
 | Peso di `data/processed/` | 2,87 MB | M3 |
 | Test automatici | 131 | M3 |
+| xG mediano di un tiro | 0,051 | M4 |
+| Distanza mediana di tiro | 19 m | M4 |
+| Conversione, 2 avversari inquadrati | 38,9 % | M4 |
+| Conversione, 8+ avversari inquadrati | 7,2 % | M4 |
 | Tiri analizzati | — | M3 |
 | Peso di `data/processed/` | — | M3 |
 | Brier score, modello base | — | M5 |
