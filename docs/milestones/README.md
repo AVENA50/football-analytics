@@ -16,7 +16,7 @@ più.
 | # | Milestone | Issue | Stato | Relazione |
 | --- | --- | --- | --- | --- |
 | M1 | Fondamenta | 7 | 🟢 conclusa | [M1-fondamenta.md](M1-fondamenta.md) |
-| M2 | Ingestione | 7 | ⚪ da fare | — |
+| M2 | Ingestione | 7 | 🟡 in corso | [M2-ingestione.md](M2-ingestione.md) |
 | M3 | Trasformazione | 8 | ⚪ da fare | — |
 | M4 | Esplorazione | 3 | ⚪ da fare | — |
 | M5 | Modello xG | 12 | ⚪ da fare | — |
@@ -35,6 +35,9 @@ ricalcolano a mano.
 | Cosa | Valore | Da quale milestone |
 | --- | --- | --- |
 | Pacchetti bloccati in `uv.lock` | 68 | M1 |
+| Competizioni scelte | 9 | M2 |
+| Partite disponibili | 1.753 | M2 |
+| Di cui con dati 360 | 218 | M2 |
 | Partite scaricate | — | M2 |
 | Tiri analizzati | — | M3 |
 | Peso di `data/processed/` | — | M3 |
