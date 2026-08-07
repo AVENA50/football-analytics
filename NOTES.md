@@ -227,6 +227,65 @@ plausibili di sbagliare quel conteggio sono **tre** — ignorare l'autogol
 (1 a 1), includere i rigori finali (3 a 1), contare l'autogol per entrambe le
 squadre (2 a 2) — e ora c'e' un test per ciascuno.
 
+### 2026-08-07 · M3-T2 · i minuti non si sommano
+
+**Cosa:** calcolando i minuti giocati come somma delle durate degli spezzoni di
+`positions`, alcuni giocatori risultavano con valori negativi.
+
+**Come si e' capito:** guardando uno spezzone di Federico Chiesa in
+Italia-Austria:
+
+```
+da 108:54 (p4) a  83:34 (p2)   inizio "Tactical Shift"    fine "Substitution - On"
+da  83:34 (p2) a  None         inizio "Substitution - On" fine "Final Whistle"
+```
+
+Il primo ha `to` **precedente** a `from`. Non e' un caso isolato: succede
+nell'1,3 % degli spezzoni, 30 volte su 2.320 nelle sole 57 partite scaricate.
+
+**Risolto:** non sommando. Un giocatore entra in campo una volta ed esce una
+volta; gli spezzoni intermedi esistono solo per registrare i cambi di
+posizione. Il tempo in campo e' quindi `max(to) - min(from)`, e con quella
+formula l'anomalia diventa innocua — nel caso di Chiesa da' i 61 minuti
+corretti invece dei 31 che darebbe la somma.
+
+**Cosa insegna:** quando un dato ha una struttura ridondante — spezzoni che
+insieme ricostruiscono un intervallo — conviene calcolare sull'**invariante**
+(l'intervallo complessivo) invece che sui pezzi. I pezzi possono essere
+incoerenti fra loro; l'invariante no.
+
+### 2026-08-07 · M3-T2 · 129 minuti in campo
+
+**Cosa:** cinque giocatori francesi risultavano aver giocato 129 minuti.
+
+**Come si e' capito:** il massimo teorico e' 120, supplementari compresi. La
+partita era Francia-Svizzera, finita ai rigori: prendendo `max(Half End)` su
+tutti i periodi si prendeva anche la fine del **quinto**, cioe' dei rigori, che
+cade al 128'.
+
+**Risolto:** la durata della partita considera solo i periodi fino al quarto.
+Quattro partite di Euro 2020 ne erano affette.
+
+**Cosa insegna:** e' la terza volta che il periodo 5 si intrufola dove non
+dovrebbe — prima nei gol, poi nei tiri delle statistiche giocatore, ora nella
+durata. I rigori finali sono eventi a tutti gli effetti ma non sono gioco, e
+ogni aggregazione va scritta chiedendosi se li vuole dentro. Ora c'e' una
+costante, `ULTIMO_PERIODO_DI_GIOCO`, invece di un `5` sparso nel codice.
+
+### 2026-08-07 · M3-T2 · la prima verifica contro il mondo esterno
+
+**Cosa:** la classifica marcatori calcolata da `player_stats.parquet` su Euro
+2020 e' Ronaldo 5, Schick 5, poi Lukaku, Forsberg, Kane e Benzema a 4.
+
+**Perche' conta:** e' la classifica ufficiale del torneo — Ronaldo e Schick
+vinsero la Scarpa d'Oro a pari merito. Tutte le verifiche fino a qui erano
+**interne**: i gol tornano con i risultati scritti nello stesso file. Questa e'
+la prima che si confronta con un fatto pubblico, verificabile da chiunque.
+
+Una pipeline puo' essere internamente coerente e sbagliata: basta un errore
+sistematico che si propaga ovunque. Il confronto con l'esterno e' l'unico che
+lo smaschera, e vale la pena cercarne uno per ogni tabella prodotta.
+
 ---
 
 <!--

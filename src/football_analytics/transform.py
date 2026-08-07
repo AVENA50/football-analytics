@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING, Any, Final
 import pandas as pd
 
 from football_analytics import ingest
-from football_analytics.config import Competizione
+from football_analytics.config import SOGLIA_MINUTI, Competizione
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -40,6 +40,13 @@ ESITO_GOL: Final[str] = "Goal"
 
 #: I tipi di evento che assegnano un gol senza essere un tiro.
 AUTOGOL_A_FAVORE: Final[str] = "Own Goal For"
+
+#: L'evento che chiude un periodo di gioco.
+FINE_PERIODO: Final[str] = "Half End"
+
+#: Ultimo periodo che conta come gioco. Il 5 sono i rigori finali: includerlo
+#: nel calcolo della durata darebbe giocatori in campo 129 minuti.
+ULTIMO_PERIODO_DI_GIOCO: Final[int] = 4
 
 #: Tipo di dato di ogni colonna di ``shots.parquet``.
 #:
@@ -81,6 +88,53 @@ TIPI_TIRI: Final[dict[str, str]] = {
     "giocatori_fotogramma": "int8",
     "avversari_fotogramma": "int8",
     "ha_360": "bool",
+}
+
+#: Tipo di dato di ogni colonna di ``matches.parquet``.
+TIPI_PARTITE: Final[dict[str, str]] = {
+    "match_id": "int32",
+    "competizione": "category",
+    "gruppo": "category",
+    "stagione": "category",
+    "data": "string",
+    "giornata": "int16",
+    "fase": "category",
+    "casa": "category",
+    "ospite": "category",
+    "gol_casa": "int8",
+    "gol_ospite": "int8",
+    "gol_casa_da_tiro": "int8",
+    "gol_ospite_da_tiro": "int8",
+    "autogol_casa": "int8",
+    "autogol_ospite": "int8",
+    "xg_casa": "float32",
+    "xg_ospite": "float32",
+    "tiri_casa": "int16",
+    "tiri_ospite": "int16",
+    "durata_minuti": "int16",
+    "ai_rigori": "bool",
+    "ha_360": "bool",
+}
+
+#: Tipo di dato di ogni colonna di ``player_stats.parquet``.
+TIPI_GIOCATORI: Final[dict[str, str]] = {
+    "competizione": "category",
+    "gruppo": "category",
+    "stagione": "category",
+    "giocatore_id": "int32",
+    "giocatore": "string",
+    "squadra": "category",
+    "ruolo": "category",
+    "partite": "int16",
+    "minuti": "int32",
+    "tiri": "int16",
+    "gol": "int16",
+    "xg": "float32",
+    "gol_meno_xg": "float32",
+    "tiri_90": "float32",
+    "gol_90": "float32",
+    "xg_90": "float32",
+    "sopra_soglia": "bool",
 }
 
 
@@ -130,6 +184,11 @@ def metadati_partite(comp: Competizione) -> dict[int, dict[str, Any]]:
                 "gol_casa": int(voce["home_score"]),
                 "gol_ospite": int(voce["away_score"]),
                 "ha_360": voce.get("match_status_360") == ingest.STATO_360_DISPONIBILE,
+                "data": str(voce.get("match_date", "")),
+                # I tornei a eliminazione diretta non hanno giornate: zero
+                # significa «non applicabile», non «prima giornata».
+                "giornata": int(voce.get("match_week") or 0),
+                "fase": _nome(voce.get("competition_stage")),
             }
     return metadati
 
@@ -327,15 +386,304 @@ def costruisci_tiri(competizioni: Iterable[Competizione], verifica: bool = True)
     return applica_tipi(righe)
 
 
-def applica_tipi(righe: list[dict[str, Any]]) -> pd.DataFrame:
+def applica_tipi(righe: list[dict[str, Any]], tipi: dict[str, str] | None = None) -> pd.DataFrame:
     """Costruisce il DataFrame con i tipi dichiarati.
 
     Args:
         righe: Le righe grezze.
+        tipi: Lo schema da applicare. Se assente, quello dei tiri.
 
     Returns:
         La tabella tipizzata, vuota ma con le colonne giuste se non ci sono
         righe — cosi' chi la riceve non deve gestire il caso a parte.
     """
-    df = pd.DataFrame(righe, columns=list(TIPI_TIRI))
-    return df.astype(TIPI_TIRI)
+    schema = TIPI_TIRI if tipi is None else tipi
+    df = pd.DataFrame(righe, columns=list(schema))
+    return df.astype(schema)
+
+
+# ---------------------------------------------------------------------------
+# matches.parquet e i minuti giocati (M3-T2)
+# ---------------------------------------------------------------------------
+
+
+def durata_partita(eventi: Sequence[dict[str, Any]]) -> int:
+    """Calcola la durata effettiva della partita, in secondi.
+
+    Esclude il periodo dei rigori finali. Includerlo darebbe giocatori in campo
+    per 129 minuti: e' successo, ed e' il motivo per cui questa funzione esiste
+    invece di un ``max()`` scritto sul posto.
+
+    Args:
+        eventi: Gli eventi grezzi della partita.
+
+    Returns:
+        Il secondo dell'ultimo fischio di un periodo di gioco. Zero se la
+        partita non contiene eventi di fine periodo.
+    """
+    fini = [
+        int(e["minute"]) * 60 + int(e["second"])
+        for e in eventi
+        if _nome(e.get("type")) == FINE_PERIODO and int(e["period"]) <= ULTIMO_PERIODO_DI_GIOCO
+    ]
+    return max(fini) if fini else 0
+
+
+def _secondi(orario: str | None) -> int | None:
+    """Converte un orario ``"MM:SS"`` in secondi dall'inizio della partita.
+
+    Args:
+        orario: L'orario nel formato di StatsBomb, oppure ``None``.
+
+    Returns:
+        I secondi, oppure ``None`` se l'orario e' assente.
+    """
+    if orario is None:
+        return None
+    minuti, secondi = orario.split(":")
+    return int(minuti) * 60 + int(secondi)
+
+
+def presenze_di_partita(
+    match_id: int, comp: Competizione, meta: dict[str, Any], durata: int
+) -> list[dict[str, Any]]:
+    """Calcola i minuti giocati da ogni giocatore di una partita.
+
+    **Non somma gli spezzoni**, e la ragione e' un difetto dei dati: nell'1,3 %
+    dei casi StatsBomb pubblica uno spezzone con ``to`` precedente a ``from``,
+    e sommarli produrrebbe minuti negativi. Un giocatore entra in campo una
+    volta sola ed esce una volta sola — gli spezzoni intermedi esistono solo
+    per registrare i cambi di posizione — quindi il tempo in campo e' la
+    distanza fra il primo ingresso e l'ultima uscita.
+
+    Args:
+        match_id: La partita.
+        comp: La competizione a cui appartiene.
+        meta: I metadati della partita.
+        durata: La durata effettiva in secondi, da :func:`durata_partita`.
+
+    Returns:
+        Una riga per giocatore **sceso in campo**. Chi resta in panchina non
+        ha spezzoni e non compare: una riga di soli zeri non aggiunge nulla e
+        moltiplicherebbe la tabella per tre.
+    """
+    percorso = ingest.percorso_risorsa("lineups", match_id)
+    if not percorso.exists():
+        return []
+
+    righe: list[dict[str, Any]] = []
+    for squadra in ingest.leggi_json(percorso):
+        nome_squadra = str(squadra.get("team_name", ""))
+        in_casa = nome_squadra == meta["casa"]
+        for giocatore in squadra.get("lineup", []):
+            spezzoni = giocatore.get("positions") or []
+            if not spezzoni:
+                continue
+
+            inizio = min(_secondi(p["from"]) or 0 for p in spezzoni)
+            if any(p["to"] is None for p in spezzoni):
+                uscita = durata
+            else:
+                uscita = max(_secondi(p["to"]) or 0 for p in spezzoni)
+
+            minuti = max(0, round((uscita - inizio) / 60))
+            righe.append(
+                {
+                    "match_id": match_id,
+                    "competizione": comp.chiave,
+                    "gruppo": str(comp.gruppo),
+                    "stagione": comp.stagione,
+                    "giocatore_id": int(giocatore["player_id"]),
+                    "giocatore": str(giocatore["player_name"]),
+                    "squadra": nome_squadra,
+                    "in_casa": in_casa,
+                    "ruolo": str(spezzoni[0].get("position", "")),
+                    "minuti": minuti,
+                }
+            )
+    return righe
+
+
+def _riga_partita(
+    match_id: int,
+    comp: Competizione,
+    meta: dict[str, Any],
+    eventi: Sequence[dict[str, Any]],
+) -> dict[str, Any]:
+    """Costruisce la riga di una partita, con aggregati e controlli.
+
+    Args:
+        match_id: La partita.
+        comp: La competizione.
+        meta: I metadati, con il risultato ufficiale.
+        eventi: Gli eventi grezzi.
+
+    Returns:
+        Una riga con tutte le colonne di :data:`TIPI_PARTITE`.
+    """
+    aggregati: dict[str, dict[str, float]] = {
+        meta["casa"]: {"gol": 0, "xg": 0.0, "tiri": 0, "autogol": 0},
+        meta["ospite"]: {"gol": 0, "xg": 0.0, "tiri": 0, "autogol": 0},
+    }
+    ai_rigori = False
+
+    for evento in eventi:
+        tipo = _nome(evento.get("type"))
+        squadra = _nome(evento.get("team"))
+        if squadra not in aggregati:
+            continue
+
+        if tipo == "Shot":
+            if int(evento["period"]) == PERIODO_RIGORI:
+                ai_rigori = True
+                continue
+            tiro = evento.get("shot", {})
+            aggregati[squadra]["tiri"] += 1
+            aggregati[squadra]["xg"] += float(tiro.get("statsbomb_xg", 0.0))
+            if _nome(tiro.get("outcome")) == ESITO_GOL:
+                aggregati[squadra]["gol"] += 1
+        elif tipo == AUTOGOL_A_FAVORE:
+            aggregati[squadra]["autogol"] += 1
+
+    casa, ospite = aggregati[meta["casa"]], aggregati[meta["ospite"]]
+    return {
+        "match_id": match_id,
+        "competizione": comp.chiave,
+        "gruppo": str(comp.gruppo),
+        "stagione": comp.stagione,
+        "data": str(meta.get("data", "")),
+        "giornata": int(meta.get("giornata", 0)),
+        "fase": str(meta.get("fase", "")),
+        "casa": meta["casa"],
+        "ospite": meta["ospite"],
+        "gol_casa": meta["gol_casa"],
+        "gol_ospite": meta["gol_ospite"],
+        "gol_casa_da_tiro": int(casa["gol"]),
+        "gol_ospite_da_tiro": int(ospite["gol"]),
+        "autogol_casa": int(casa["autogol"]),
+        "autogol_ospite": int(ospite["autogol"]),
+        "xg_casa": float(casa["xg"]),
+        "xg_ospite": float(ospite["xg"]),
+        "tiri_casa": int(casa["tiri"]),
+        "tiri_ospite": int(ospite["tiri"]),
+        "durata_minuti": round(durata_partita(eventi) / 60),
+        "ai_rigori": ai_rigori,
+        "ha_360": bool(meta["ha_360"]),
+    }
+
+
+def costruisci_partite_e_presenze(
+    competizioni: Iterable[Competizione], verifica: bool = True
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Costruisce ``matches.parquet`` e la tabella intermedia delle presenze.
+
+    Le due cose insieme perche' condividono la lettura degli eventi: separarle
+    significherebbe analizzare due volte cinque gigabyte di JSON.
+
+    Args:
+        competizioni: Le competizioni da includere.
+        verifica: Se vero, ogni partita viene confrontata con il risultato
+            ufficiale.
+
+    Returns:
+        La tabella delle partite e quella delle presenze, una riga per
+        giocatore sceso in campo in ogni partita.
+    """
+    righe_partite: list[dict[str, Any]] = []
+    righe_presenze: list[dict[str, Any]] = []
+
+    for comp in competizioni:
+        for match_id, meta in metadati_partite(comp).items():
+            percorso = ingest.percorso_risorsa("events", match_id)
+            if not percorso.exists():
+                continue
+            eventi: list[dict[str, Any]] = ingest.leggi_json(percorso)
+            if verifica:
+                verifica_risultato(match_id, gol_per_squadra(eventi), meta)
+            righe_partite.append(_riga_partita(match_id, comp, meta, eventi))
+            righe_presenze.extend(presenze_di_partita(match_id, comp, meta, durata_partita(eventi)))
+
+    presenze = pd.DataFrame(righe_presenze)
+    return applica_tipi(righe_partite, TIPI_PARTITE), presenze
+
+
+def costruisci_giocatori(tiri: pd.DataFrame, presenze: pd.DataFrame) -> pd.DataFrame:
+    """Aggrega minuti e tiri in ``player_stats.parquet``.
+
+    La chiave e' competizione + giocatore + squadra, non il solo giocatore: in
+    un campionato un giocatore puo' cambiare maglia a gennaio, e sommare le due
+    meta' della sua stagione sotto un'unica squadra darebbe una riga che non
+    corrisponde a nessuna realta'.
+
+    Args:
+        tiri: La tabella dei tiri.
+        presenze: La tabella delle presenze.
+
+    Returns:
+        Una riga per giocatore, con i valori per 90 minuti gia' calcolati.
+    """
+    if presenze.empty:
+        return applica_tipi([], TIPI_GIOCATORI)
+
+    chiave = ["competizione", "gruppo", "stagione", "giocatore_id", "giocatore", "squadra"]
+    base = (
+        presenze.groupby(chiave, observed=True)
+        .agg(partite=("match_id", "nunique"), minuti=("minuti", "sum"))
+        .reset_index()
+    )
+    ruoli = (
+        presenze.groupby([*chiave, "ruolo"], observed=True)["minuti"]
+        .sum()
+        .reset_index()
+        .sort_values("minuti", ascending=False)
+        .drop_duplicates(subset=chiave)[[*chiave, "ruolo"]]
+    )
+    base = base.merge(ruoli, on=chiave, how="left")
+
+    # I rigori finali non sono tiri della partita: non entrano nelle
+    # statistiche del giocatore, altrimenti chi calcia dal dischetto a fine
+    # supplementari risulterebbe con un xG per 90 minuti fuori scala.
+    da_gioco = tiri[~tiri["rigori_finali"]]
+    per_giocatore = (
+        da_gioco.groupby(["competizione", "giocatore_id", "squadra"], observed=True)
+        .agg(tiri=("gol", "size"), gol=("gol", "sum"), xg=("xg_statsbomb", "sum"))
+        .reset_index()
+    )
+
+    unito = base.merge(per_giocatore, on=["competizione", "giocatore_id", "squadra"], how="left")
+    for colonna in ("tiri", "gol", "xg"):
+        unito[colonna] = unito[colonna].fillna(0)
+
+    novanta = unito["minuti"].clip(lower=1) / 90.0
+    unito["gol_meno_xg"] = unito["gol"] - unito["xg"]
+    unito["tiri_90"] = unito["tiri"] / novanta
+    unito["gol_90"] = unito["gol"] / novanta
+    unito["xg_90"] = unito["xg"] / novanta
+    unito["sopra_soglia"] = unito["minuti"] >= SOGLIA_MINUTI
+
+    righe = [{str(k): v for k, v in riga.items()} for riga in unito.to_dict("records")]
+    return applica_tipi(righe, TIPI_GIOCATORI)
+
+
+def verifica_gol_giocatori(giocatori: pd.DataFrame, partite: pd.DataFrame) -> None:
+    """Confronta i gol attribuiti ai giocatori con quelli delle partite.
+
+    E' il criterio di completamento di M3-T2. Il confronto e' sui gol **da
+    tiro**: gli autogol non si attribuiscono a chi li subisce, quindi stanno
+    nelle partite ma non nei giocatori.
+
+    Args:
+        giocatori: La tabella dei giocatori.
+        partite: La tabella delle partite.
+
+    Raises:
+        QualitaError: Se i due totali non coincidono.
+    """
+    da_giocatori = int(giocatori["gol"].sum())
+    da_partite = int(partite["gol_casa_da_tiro"].sum() + partite["gol_ospite_da_tiro"].sum())
+    if da_giocatori != da_partite:
+        msg = (
+            f"Gol per giocatore: {da_giocatori}, gol da tiro per partita: "
+            f"{da_partite}. L'attribuzione ai giocatori perde o duplica dei gol."
+        )
+        raise QualitaError(msg)
