@@ -27,10 +27,11 @@ from typing import TYPE_CHECKING, Any, Final
 import pandas as pd
 
 from football_analytics import ingest
-from football_analytics.config import SOGLIA_MINUTI, Competizione
+from football_analytics.config import SOGLIA_MINUTI, Competizione, percorso_tabella
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
+    from pathlib import Path
 
 #: Il periodo dei tiri di rigore a fine partita. Non contano per il risultato.
 PERIODO_RIGORI: Final[int] = 5
@@ -47,6 +48,15 @@ FINE_PERIODO: Final[str] = "Half End"
 #: Ultimo periodo che conta come gioco. Il 5 sono i rigori finali: includerlo
 #: nel calcolo della durata darebbe giocatori in campo 129 minuti.
 ULTIMO_PERIODO_DI_GIOCO: Final[int] = 4
+
+#: Dimensioni del campo nel sistema di coordinate di StatsBomb.
+LUNGHEZZA_CAMPO: Final[float] = 120.0
+LARGHEZZA_CAMPO: Final[float] = 80.0
+
+#: Durata plausibile di una partita, in minuti. Sotto gli 80 significa che
+#: manca un tempo, sopra i 135 che si sta contando qualcosa che non e' gioco.
+DURATA_MINIMA: Final[int] = 80
+DURATA_MASSIMA: Final[int] = 135
 
 #: Tipo di dato di ogni colonna di ``shots.parquet``.
 #:
@@ -607,13 +617,47 @@ def costruisci_partite_e_presenze(
     return applica_tipi(righe_partite, TIPI_PARTITE), presenze
 
 
+def _prevalente(presenze: pd.DataFrame, chiave: list[str], attributo: str) -> pd.DataFrame:
+    """Sceglie il valore di un attributo che copre piu' minuti giocati.
+
+    Serve per nome e ruolo, che possono cambiare fra una partita e l'altra: il
+    ruolo perche' un giocatore cambia posizione, il nome perche' StatsBomb a
+    volte lo scrive in due modi — «Danny Ward» e «Daniel Ward» sono la stessa
+    persona.
+
+    A parita' di minuti sceglie l'ordine alfabetico, non il primo incontrato:
+    senza un criterio deterministico due esecuzioni potrebbero dare risultati
+    diversi, e M3-T5 chiede esattamente il contrario.
+
+    Args:
+        presenze: La tabella delle presenze.
+        chiave: Le colonne che identificano un giocatore.
+        attributo: La colonna di cui scegliere il valore prevalente.
+
+    Returns:
+        Una riga per chiave, con il valore scelto.
+    """
+    conteggi = presenze.groupby([*chiave, attributo], observed=True)["minuti"].sum().reset_index()
+    ordinati = conteggi.sort_values(
+        [*chiave, "minuti", attributo],
+        ascending=[True] * len(chiave) + [False, True],
+    )
+    return ordinati.drop_duplicates(subset=chiave)[[*chiave, attributo]]
+
+
 def costruisci_giocatori(tiri: pd.DataFrame, presenze: pd.DataFrame) -> pd.DataFrame:
     """Aggrega minuti e tiri in ``player_stats.parquet``.
 
-    La chiave e' competizione + giocatore + squadra, non il solo giocatore: in
-    un campionato un giocatore puo' cambiare maglia a gennaio, e sommare le due
-    meta' della sua stagione sotto un'unica squadra darebbe una riga che non
-    corrisponde a nessuna realta'.
+    La chiave e' competizione + **identificativo** + squadra. Il nome resta
+    fuori di proposito: e' un attributo, non un'identita'. StatsBomb scrive
+    tre giocatori su Euro 2020 con due grafie diverse — «Danny Ward» e «Daniel
+    Ward», «N'Golo Kante» con l'apostrofo raddoppiato — e metterlo nella
+    chiave produrrebbe due righe per la stessa persona.
+
+    La squadra invece **e'** parte della chiave: in un campionato un giocatore
+    puo' cambiare maglia a gennaio, e sommare le due meta' della sua stagione
+    sotto un'unica squadra darebbe una riga che non corrisponde a nessuna
+    realta'.
 
     Args:
         tiri: La tabella dei tiri.
@@ -625,20 +669,14 @@ def costruisci_giocatori(tiri: pd.DataFrame, presenze: pd.DataFrame) -> pd.DataF
     if presenze.empty:
         return applica_tipi([], TIPI_GIOCATORI)
 
-    chiave = ["competizione", "gruppo", "stagione", "giocatore_id", "giocatore", "squadra"]
+    chiave = ["competizione", "gruppo", "stagione", "giocatore_id", "squadra"]
     base = (
         presenze.groupby(chiave, observed=True)
         .agg(partite=("match_id", "nunique"), minuti=("minuti", "sum"))
         .reset_index()
     )
-    ruoli = (
-        presenze.groupby([*chiave, "ruolo"], observed=True)["minuti"]
-        .sum()
-        .reset_index()
-        .sort_values("minuti", ascending=False)
-        .drop_duplicates(subset=chiave)[[*chiave, "ruolo"]]
-    )
-    base = base.merge(ruoli, on=chiave, how="left")
+    for attributo in ("giocatore", "ruolo"):
+        base = base.merge(_prevalente(presenze, chiave, attributo), on=chiave, how="left")
 
     # I rigori finali non sono tiri della partita: non entrano nelle
     # statistiche del giocatore, altrimenti chi calcia dal dischetto a fine
@@ -663,6 +701,219 @@ def costruisci_giocatori(tiri: pd.DataFrame, presenze: pd.DataFrame) -> pd.DataF
 
     righe = [{str(k): v for k, v in riga.items()} for riga in unito.to_dict("records")]
     return applica_tipi(righe, TIPI_GIOCATORI)
+
+
+def costruisci_tabelle(
+    competizioni: Iterable[Competizione], verifica: bool = True
+) -> dict[str, pd.DataFrame]:
+    """Costruisce le tre tabelle leggendo gli eventi **una volta sola**.
+
+    Le funzioni `costruisci_tiri` e `costruisci_partite_e_presenze` esistono
+    ancora e restano utili per lavorare su una tabella alla volta, ma ognuna
+    rilegge i JSON: usarle in sequenza significherebbe analizzare cinque
+    gigabyte due volte.
+
+    Args:
+        competizioni: Le competizioni da includere.
+        verifica: Se vero, ogni partita viene confrontata con il risultato
+            ufficiale e un'incoerenza interrompe la costruzione.
+
+    Returns:
+        Le tabelle ``shots``, ``matches`` e ``player_stats``, con i nomi che
+        corrispondono ai file Parquet.
+    """
+    righe_tiri: list[dict[str, Any]] = []
+    righe_partite: list[dict[str, Any]] = []
+    righe_presenze: list[dict[str, Any]] = []
+
+    for comp in competizioni:
+        for match_id, meta in metadati_partite(comp).items():
+            percorso = ingest.percorso_risorsa("events", match_id)
+            if not percorso.exists():
+                continue
+            eventi: list[dict[str, Any]] = ingest.leggi_json(percorso)
+            if verifica:
+                verifica_risultato(match_id, gol_per_squadra(eventi), meta)
+
+            righe_tiri.extend(
+                riga_tiro(e, comp, match_id, meta) for e in eventi if _nome(e.get("type")) == "Shot"
+            )
+            righe_partite.append(_riga_partita(match_id, comp, meta, eventi))
+            righe_presenze.extend(presenze_di_partita(match_id, comp, meta, durata_partita(eventi)))
+
+    tiri = applica_tipi(righe_tiri)
+    partite = applica_tipi(righe_partite, TIPI_PARTITE)
+    giocatori = costruisci_giocatori(tiri, pd.DataFrame(righe_presenze))
+    return {"shots": tiri, "matches": partite, "player_stats": giocatori}
+
+
+# ---------------------------------------------------------------------------
+# Controlli di qualita' (M3-T4)
+# ---------------------------------------------------------------------------
+
+
+def _problemi_tiri(tiri: pd.DataFrame) -> list[str]:
+    """Cerca incoerenze nella tabella dei tiri.
+
+    Args:
+        tiri: La tabella da controllare.
+
+    Returns:
+        Le anomalie trovate, in chiaro. Lista vuota se e' tutto a posto.
+    """
+    problemi: list[str] = []
+    if tiri.empty:
+        return problemi
+
+    duplicati = int(tiri["shot_id"].duplicated().sum())
+    if duplicati:
+        problemi.append(f"tiri: {duplicati} identificativi duplicati")
+
+    fuori_x = int(((tiri["x"] < 0) | (tiri["x"] > LUNGHEZZA_CAMPO)).sum())
+    fuori_y = int(((tiri["y"] < 0) | (tiri["y"] > LARGHEZZA_CAMPO)).sum())
+    if fuori_x or fuori_y:
+        problemi.append(f"tiri: {fuori_x} coordinate x e {fuori_y} y fuori dal campo")
+
+    mancanti = int(tiri[["x", "y", "xg_statsbomb"]].isna().to_numpy().sum())
+    if mancanti:
+        problemi.append(f"tiri: {mancanti} valori mancanti fra coordinate e xG")
+
+    xg_assurdi = int(((tiri["xg_statsbomb"] < 0) | (tiri["xg_statsbomb"] > 1)).sum())
+    if xg_assurdi:
+        problemi.append(f"tiri: {xg_assurdi} valori di xG fuori dall'intervallo 0-1")
+
+    incoerenti = int((tiri["gol"] != (tiri["esito"] == ESITO_GOL)).sum())
+    if incoerenti:
+        problemi.append(f"tiri: {incoerenti} righe con 'gol' incoerente con l'esito")
+
+    return problemi
+
+
+def _problemi_partite(partite: pd.DataFrame) -> list[str]:
+    """Cerca incoerenze nella tabella delle partite.
+
+    Args:
+        partite: La tabella da controllare.
+
+    Returns:
+        Le anomalie trovate, in chiaro.
+    """
+    problemi: list[str] = []
+    if partite.empty:
+        return problemi
+
+    duplicati = int(partite["match_id"].duplicated().sum())
+    if duplicati:
+        problemi.append(f"partite: {duplicati} identificativi duplicati")
+
+    # E' l'identita' che tiene insieme le due letture del risultato: i gol
+    # ufficiali sono quelli da tiro piu' gli autogol subiti dall'avversario.
+    for lato in ("casa", "ospite"):
+        scarto = int(
+            (
+                partite[f"gol_{lato}_da_tiro"] + partite[f"autogol_{lato}"]
+                != partite[f"gol_{lato}"]
+            ).sum()
+        )
+        if scarto:
+            problemi.append(f"partite: {scarto} righe in cui i gol {lato} non tornano")
+
+    durate = partite["durata_minuti"]
+    strane = int(((durate < DURATA_MINIMA) | (durate > DURATA_MASSIMA)).sum())
+    if strane:
+        problemi.append(
+            f"partite: {strane} durate fuori dall'intervallo "
+            f"{DURATA_MINIMA}-{DURATA_MASSIMA} minuti"
+        )
+
+    return problemi
+
+
+def _problemi_giocatori(giocatori: pd.DataFrame) -> list[str]:
+    """Cerca incoerenze nella tabella dei giocatori.
+
+    Args:
+        giocatori: La tabella da controllare.
+
+    Returns:
+        Le anomalie trovate, in chiaro.
+    """
+    problemi: list[str] = []
+    if giocatori.empty:
+        return problemi
+
+    chiave = ["competizione", "giocatore_id", "squadra"]
+    duplicati = int(giocatori.duplicated(subset=chiave).sum())
+    if duplicati:
+        problemi.append(f"giocatori: {duplicati} righe duplicate per {'+'.join(chiave)}")
+
+    piu_gol_che_tiri = int((giocatori["gol"] > giocatori["tiri"]).sum())
+    if piu_gol_che_tiri:
+        problemi.append(f"giocatori: {piu_gol_che_tiri} con piu' gol che tiri")
+
+    minuti_assurdi = int((giocatori["minuti"] <= 0).sum())
+    if minuti_assurdi:
+        problemi.append(f"giocatori: {minuti_assurdi} con minuti non positivi")
+
+    mancanti = int(giocatori[["gol_90", "xg_90", "tiri_90"]].isna().to_numpy().sum())
+    if mancanti:
+        problemi.append(f"giocatori: {mancanti} valori per 90 minuti mancanti")
+
+    return problemi
+
+
+def controlla(tabelle: dict[str, pd.DataFrame]) -> None:
+    """Esegue tutti i controlli di qualita' e interrompe se qualcosa non torna.
+
+    Riporta **tutti** i problemi insieme invece di fermarsi al primo: quando
+    una trasformazione si rompe, di solito si rompe in piu' punti, e scoprirli
+    uno alla volta costa un'esecuzione completa per ognuno.
+
+    Args:
+        tabelle: Le tabelle da controllare, come le restituisce
+            :func:`costruisci_tabelle`.
+
+    Raises:
+        QualitaError: Se anche un solo controllo trova un'anomalia.
+    """
+    problemi = [
+        *_problemi_tiri(tabelle["shots"]),
+        *_problemi_partite(tabelle["matches"]),
+        *_problemi_giocatori(tabelle["player_stats"]),
+    ]
+
+    partite_note = set(tabelle["matches"]["match_id"])
+    orfani = set(tabelle["shots"]["match_id"]) - partite_note
+    if orfani:
+        problemi.append(f"tiri: {len(orfani)} partite presenti nei tiri ma non in matches")
+
+    try:
+        verifica_gol_giocatori(tabelle["player_stats"], tabelle["matches"])
+    except QualitaError as errore:
+        problemi.append(str(errore))
+
+    if problemi:
+        elenco = "\n  - ".join(problemi)
+        msg = f"Controlli di qualita' falliti:\n  - {elenco}"
+        raise QualitaError(msg)
+
+
+def salva(nome: str, tabella: pd.DataFrame) -> Path:
+    """Scrive una tabella nel magazzino, in Parquet compresso.
+
+    Args:
+        nome: Il nome logico della tabella, fra quelli di ``config.TABELLE``.
+        tabella: I dati da scrivere.
+
+    Returns:
+        Il percorso del file scritto.
+    """
+    percorso = percorso_tabella(nome)
+    percorso.parent.mkdir(parents=True, exist_ok=True)
+    # zstd comprime meglio di snappy a parita' di velocita' di lettura, e qui
+    # ogni megabyte conta: il limite di GitHub e' 50 MB per file.
+    tabella.to_parquet(percorso, index=False, compression="zstd")
+    return percorso
 
 
 def verifica_gol_giocatori(giocatori: pd.DataFrame, partite: pd.DataFrame) -> None:

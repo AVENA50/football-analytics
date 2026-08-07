@@ -33,9 +33,7 @@ ottengono i 61 corretti.
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 import pytest
@@ -44,65 +42,9 @@ from football_analytics import ingest, transform
 from football_analytics.config import EURO_2020
 from football_analytics.transform import QualitaError
 
-FIXTURES = Path(__file__).parent / "fixtures"
-
-META: dict[str, Any] = {
-    "casa": "Casalinga",
-    "ospite": "Ospite",
-    "gol_casa": 2,
-    "gol_ospite": 1,
-    "ha_360": True,
-    "data": "2026-08-07",
-    "giornata": 0,
-    "fase": "Final",
-}
-
-DURATA_ATTESA_SECONDI = 121 * 60
-
-
-@pytest.fixture
-def eventi() -> list[dict[str, Any]]:
-    """Gli eventi del campione.
-
-    Returns:
-        La lista di eventi letta dalla fixture.
-    """
-    dati: list[dict[str, Any]] = json.loads(
-        (FIXTURES / "eventi_campione.json").read_text(encoding="utf-8")
-    )
-    return dati
-
-
-def prepara(radice: Path, match_id: int = 999) -> None:
-    """Materializza eventi, formazioni ed elenco partite su disco.
-
-    Args:
-        radice: La cartella che fa da ``data/raw``.
-        match_id: L'identificativo della partita.
-    """
-    for nome, cartella in (("eventi_campione", "events"), ("formazioni_campione", "lineups")):
-        destinazione = radice / cartella / f"{match_id}.json"
-        destinazione.parent.mkdir(parents=True, exist_ok=True)
-        destinazione.write_text(
-            (FIXTURES / f"{nome}.json").read_text(encoding="utf-8"), encoding="utf-8"
-        )
-
-    partite = [
-        {
-            "match_id": match_id,
-            "match_date": META["data"],
-            "match_week": 0,
-            "competition_stage": {"id": 26, "name": META["fase"]},
-            "home_team": {"home_team_name": META["casa"]},
-            "away_team": {"away_team_name": META["ospite"]},
-            "home_score": META["gol_casa"],
-            "away_score": META["gol_ospite"],
-            "match_status_360": "available",
-        }
-    ]
-    elenco = radice / "matches" / str(EURO_2020.competition_id) / f"{EURO_2020.season_id}.json"
-    elenco.parent.mkdir(parents=True, exist_ok=True)
-    elenco.write_text(json.dumps(partite), encoding="utf-8")
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from pathlib import Path
 
 
 # ---------------------------------------------------------------------------
@@ -110,10 +52,10 @@ def prepara(radice: Path, match_id: int = 999) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_la_durata_esclude_i_rigori_finali(eventi: list[dict[str, Any]]) -> None:
+def test_la_durata_esclude_i_rigori_finali(eventi: list[dict[str, Any]], durata: int) -> None:
     # Il quinto periodo chiude al 128'. Includerlo darebbe giocatori in campo
     # per 128 minuti: e' successo davvero su quattro partite di Euro 2020.
-    assert transform.durata_partita(eventi) == DURATA_ATTESA_SECONDI
+    assert transform.durata_partita(eventi) == durata
 
 
 def test_senza_fine_periodo_la_durata_e_zero() -> None:
@@ -125,21 +67,31 @@ def test_senza_fine_periodo_la_durata_e_zero() -> None:
 # ---------------------------------------------------------------------------
 
 
-def minuti_per_nome() -> dict[str, int]:
-    """Calcola i minuti di ogni giocatore della fixture.
+def minuti_per_nome(meta: dict[str, Any], durata: int) -> dict[str, int]:
+    """Calcola i minuti di ogni giocatore della partita di prova.
+
+    Args:
+        meta: I metadati della partita.
+        durata: La durata effettiva in secondi.
 
     Returns:
         Mappa dal nome del giocatore ai minuti giocati.
     """
-    righe = transform.presenze_di_partita(999, EURO_2020, META, DURATA_ATTESA_SECONDI)
+    righe = transform.presenze_di_partita(999, EURO_2020, meta, durata)
     return {r["giocatore"]: r["minuti"] for r in righe}
 
 
-def test_i_minuti_di_ogni_giocatore(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_i_minuti_di_ogni_giocatore(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    prepara: Callable[..., None],
+    meta: dict[str, Any],
+    durata: int,
+) -> None:
     monkeypatch.setattr(ingest, "DATA_RAW", tmp_path)
     prepara(tmp_path)
 
-    assert minuti_per_nome() == {
+    assert minuti_per_nome(meta, durata) == {
         "Attaccante Uno": 121,
         "Regista": 60,
         "Rigorista Uno": 61,
@@ -150,39 +102,55 @@ def test_i_minuti_di_ogni_giocatore(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
 
 def test_gli_spezzoni_invertiti_non_producono_minuti_negativi(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    prepara: Callable[..., None],
+    meta: dict[str, Any],
+    durata: int,
 ) -> None:
     # Sommare le durate degli spezzoni di Rigorista Uno darebbe 31 minuti:
     # -30 dal primo, che ha `to` precedente a `from`, piu' 61 dal secondo.
     monkeypatch.setattr(ingest, "DATA_RAW", tmp_path)
     prepara(tmp_path)
 
-    assert minuti_per_nome()["Rigorista Uno"] == 61
+    assert minuti_per_nome(meta, durata)["Rigorista Uno"] == 61
 
 
-def test_chi_non_entra_non_compare(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_chi_non_entra_non_compare(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    prepara: Callable[..., None],
+    meta: dict[str, Any],
+    durata: int,
+) -> None:
     # Una riga di soli zeri non aggiunge informazione e moltiplicherebbe la
     # tabella: su Euro 2020 sono 849 giocatori mai entrati.
     monkeypatch.setattr(ingest, "DATA_RAW", tmp_path)
     prepara(tmp_path)
 
-    assert "Panchinaro" not in minuti_per_nome()
+    assert "Panchinaro" not in minuti_per_nome(meta, durata)
 
 
-def test_i_minuti_non_sono_mai_negativi(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_i_minuti_non_sono_mai_negativi(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    prepara: Callable[..., None],
+    meta: dict[str, Any],
+    durata: int,
+) -> None:
     monkeypatch.setattr(ingest, "DATA_RAW", tmp_path)
     prepara(tmp_path)
-    righe = transform.presenze_di_partita(999, EURO_2020, META, DURATA_ATTESA_SECONDI)
+    righe = transform.presenze_di_partita(999, EURO_2020, meta, durata)
 
     assert all(r["minuti"] >= 0 for r in righe)
 
 
 def test_senza_file_formazioni_non_si_rompe(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, meta: dict[str, Any]
 ) -> None:
     monkeypatch.setattr(ingest, "DATA_RAW", tmp_path)
 
-    assert transform.presenze_di_partita(999, EURO_2020, META, 5400) == []
+    assert transform.presenze_di_partita(999, EURO_2020, meta, 5400) == []
 
 
 # ---------------------------------------------------------------------------
@@ -190,12 +158,27 @@ def test_senza_file_formazioni_non_si_rompe(
 # ---------------------------------------------------------------------------
 
 
-def test_la_riga_partita_separa_gol_da_tiro_e_autogol(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+@pytest.fixture
+def partite(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, prepara: Callable[..., None]
+) -> pd.DataFrame:
+    """La tabella delle partite costruita dalla fixture.
+
+    Args:
+        tmp_path: La cartella temporanea che fa da ``data/raw``.
+        monkeypatch: Per dirottare i percorsi.
+        prepara: La funzione che materializza la partita di prova.
+
+    Returns:
+        La tabella con la sola partita di prova.
+    """
     monkeypatch.setattr(ingest, "DATA_RAW", tmp_path)
     prepara(tmp_path)
-    partite, _ = transform.costruisci_partite_e_presenze([EURO_2020])
+    tabella, _ = transform.costruisci_partite_e_presenze([EURO_2020])
+    return tabella
+
+
+def test_la_riga_partita_separa_gol_da_tiro_e_autogol(partite: pd.DataFrame) -> None:
     riga = partite.iloc[0]
 
     # Ufficiale 2-1. Da tiro: 1-1. L'autogol porta la Casalinga a 2.
@@ -204,24 +187,14 @@ def test_la_riga_partita_separa_gol_da_tiro_e_autogol(
     assert (riga["autogol_casa"], riga["autogol_ospite"]) == (1, 0)
 
 
-def test_i_gol_da_tiro_piu_gli_autogol_danno_il_risultato(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(ingest, "DATA_RAW", tmp_path)
-    prepara(tmp_path)
-    partite, _ = transform.costruisci_partite_e_presenze([EURO_2020])
+def test_i_gol_da_tiro_piu_gli_autogol_danno_il_risultato(partite: pd.DataFrame) -> None:
     riga = partite.iloc[0]
 
     assert riga["gol_casa_da_tiro"] + riga["autogol_casa"] == riga["gol_casa"]
     assert riga["gol_ospite_da_tiro"] + riga["autogol_ospite"] == riga["gol_ospite"]
 
 
-def test_gli_aggregati_escludono_i_rigori_finali(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(ingest, "DATA_RAW", tmp_path)
-    prepara(tmp_path)
-    partite, _ = transform.costruisci_partite_e_presenze([EURO_2020])
+def test_gli_aggregati_escludono_i_rigori_finali(partite: pd.DataFrame) -> None:
     riga = partite.iloc[0]
 
     # Cinque tiri in tutto, due dei quali dal dischetto a fine partita.
@@ -229,21 +202,11 @@ def test_gli_aggregati_escludono_i_rigori_finali(
     assert bool(riga["ai_rigori"]) is True
 
 
-def test_la_partita_registra_la_durata(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(ingest, "DATA_RAW", tmp_path)
-    prepara(tmp_path)
-    partite, _ = transform.costruisci_partite_e_presenze([EURO_2020])
-
+def test_la_partita_registra_la_durata(partite: pd.DataFrame) -> None:
     assert partite.iloc[0]["durata_minuti"] == 121
 
 
-def test_la_tabella_partite_ha_i_tipi_dichiarati(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(ingest, "DATA_RAW", tmp_path)
-    prepara(tmp_path)
-    partite, _ = transform.costruisci_partite_e_presenze([EURO_2020])
-
+def test_la_tabella_partite_ha_i_tipi_dichiarati(partite: pd.DataFrame) -> None:
     assert list(partite.columns) == list(transform.TIPI_PARTITE)
     for colonna, tipo in transform.TIPI_PARTITE.items():
         assert str(partite[colonna].dtype) == tipo, colonna
@@ -254,59 +217,55 @@ def test_la_tabella_partite_ha_i_tipi_dichiarati(
 # ---------------------------------------------------------------------------
 
 
-def costruisci_tutto(tmp_path: Path) -> tuple[Any, Any, Any]:
-    """Costruisce le tre tabelle dalla fixture.
+@pytest.fixture
+def tabelle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, prepara: Callable[..., None]
+) -> dict[str, pd.DataFrame]:
+    """Le tre tabelle costruite dalla fixture.
 
     Args:
         tmp_path: La cartella temporanea che fa da ``data/raw``.
+        monkeypatch: Per dirottare i percorsi.
+        prepara: La funzione che materializza la partita di prova.
 
     Returns:
-        Tiri, partite e giocatori.
+        Le tabelle ``shots``, ``matches`` e ``player_stats``.
     """
-    prepara(tmp_path)
-    tiri = transform.costruisci_tiri([EURO_2020])
-    partite, presenze = transform.costruisci_partite_e_presenze([EURO_2020])
-    return tiri, partite, transform.costruisci_giocatori(tiri, presenze)
-
-
-def test_la_somma_dei_gol_per_giocatore_torna(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # E' il criterio di completamento di M3-T2.
     monkeypatch.setattr(ingest, "DATA_RAW", tmp_path)
-    _, partite, giocatori = costruisci_tutto(tmp_path)
+    prepara(tmp_path)
+    return transform.costruisci_tabelle([EURO_2020])
 
-    transform.verifica_gol_giocatori(giocatori, partite)
-    assert int(giocatori["gol"].sum()) == 2
+
+def test_la_somma_dei_gol_per_giocatore_torna(tabelle: dict[str, pd.DataFrame]) -> None:
+    # E' il criterio di completamento di M3-T2.
+    transform.verifica_gol_giocatori(tabelle["player_stats"], tabelle["matches"])
+    assert int(tabelle["player_stats"]["gol"].sum()) == 2
 
 
 def test_la_verifica_dei_gol_si_ferma_se_non_torna(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tabelle: dict[str, pd.DataFrame],
 ) -> None:
-    monkeypatch.setattr(ingest, "DATA_RAW", tmp_path)
-    _, partite, giocatori = costruisci_tutto(tmp_path)
+    giocatori = tabelle["player_stats"].copy()
     giocatori.loc[0, "gol"] = 99
 
     with pytest.raises(QualitaError, match="perde o duplica"):
-        transform.verifica_gol_giocatori(giocatori, partite)
+        transform.verifica_gol_giocatori(giocatori, tabelle["matches"])
 
 
 def test_i_rigori_finali_non_entrano_nelle_statistiche(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tabelle: dict[str, pd.DataFrame],
 ) -> None:
-    # Rigorista Uno segna dal dischetto a fine supplementari. Contarlo
-    # gli darebbe un gol e un xG per 90 minuti fuori scala.
-    monkeypatch.setattr(ingest, "DATA_RAW", tmp_path)
-    _, _, giocatori = costruisci_tutto(tmp_path)
+    # Rigorista Uno segna dal dischetto a fine supplementari. Contarlo gli
+    # darebbe un gol e un xG per 90 minuti fuori scala.
+    giocatori = tabelle["player_stats"]
     riga = giocatori[giocatori["giocatore"] == "Rigorista Uno"].iloc[0]
 
     assert riga["gol"] == 0
     assert riga["tiri"] == 0
 
 
-def test_i_valori_per_novanta_minuti(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(ingest, "DATA_RAW", tmp_path)
-    _, _, giocatori = costruisci_tutto(tmp_path)
+def test_i_valori_per_novanta_minuti(tabelle: dict[str, pd.DataFrame]) -> None:
+    giocatori = tabelle["player_stats"]
     riga = giocatori[giocatori["giocatore"] == "Attaccante Uno"].iloc[0]
 
     assert riga["minuti"] == 121
@@ -314,28 +273,94 @@ def test_i_valori_per_novanta_minuti(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert riga["gol_90"] == pytest.approx(1 / (121 / 90), rel=1e-4)
 
 
-def test_la_soglia_dei_cinquecento_minuti(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_la_soglia_dei_cinquecento_minuti(tabelle: dict[str, pd.DataFrame]) -> None:
     # Nessuno arriva a 500 minuti in una partita sola: la colonna esiste per
     # escludere dalle graduatorie senza togliere dalla tabella.
-    monkeypatch.setattr(ingest, "DATA_RAW", tmp_path)
-    _, _, giocatori = costruisci_tutto(tmp_path)
+    giocatori = tabelle["player_stats"]
 
     assert not giocatori["sopra_soglia"].any()
     assert len(giocatori) == 6
 
 
 def test_la_tabella_giocatori_ha_i_tipi_dichiarati(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tabelle: dict[str, pd.DataFrame],
 ) -> None:
-    monkeypatch.setattr(ingest, "DATA_RAW", tmp_path)
-    _, _, giocatori = costruisci_tutto(tmp_path)
+    giocatori = tabelle["player_stats"]
 
     assert list(giocatori.columns) == list(transform.TIPI_GIOCATORI)
     for colonna, tipo in transform.TIPI_GIOCATORI.items():
         assert str(giocatori[colonna].dtype) == tipo, colonna
 
 
+def test_due_grafie_dello_stesso_nome_danno_una_riga_sola() -> None:
+    # Su Euro 2020 succede a tre giocatori: «Danny Ward» e «Daniel Ward»,
+    # «Mykola Matvienko» e «Mykola Matviyenko», e Kante con l'apostrofo
+    # raddoppiato. L'identita' e' l'identificativo, il nome e' un attributo.
+    presenze = pd.DataFrame(
+        [
+            {
+                "match_id": 1,
+                "competizione": "euro_2020",
+                "gruppo": "torneo",
+                "stagione": "2020",
+                "giocatore_id": 9914,
+                "giocatore": "Danny Ward",
+                "squadra": "Wales",
+                "ruolo": "Goalkeeper",
+                "minuti": 90,
+            },
+            {
+                "match_id": 2,
+                "competizione": "euro_2020",
+                "gruppo": "torneo",
+                "stagione": "2020",
+                "giocatore_id": 9914,
+                "giocatore": "Daniel Ward",
+                "squadra": "Wales",
+                "ruolo": "Goalkeeper",
+                "minuti": 45,
+            },
+        ]
+    )
+
+    giocatori = transform.costruisci_giocatori(transform.applica_tipi([]), presenze)
+
+    assert len(giocatori) == 1
+    assert giocatori.iloc[0]["minuti"] == 135
+    assert giocatori.iloc[0]["partite"] == 2
+    # A parita' non c'e': 90 minuti battono 45, quindi vince «Danny Ward».
+    assert giocatori.iloc[0]["giocatore"] == "Danny Ward"
+
+
+def test_a_parita_di_minuti_il_nome_e_deterministico() -> None:
+    # Senza un criterio esplicito, due esecuzioni potrebbero scegliere grafie
+    # diverse. M3-T5 chiede l'opposto: stessi dati, stessi risultati.
+    righe = [
+        {
+            "match_id": i,
+            "competizione": "euro_2020",
+            "gruppo": "torneo",
+            "stagione": "2020",
+            "giocatore_id": 1,
+            "giocatore": nome,
+            "squadra": "Wales",
+            "ruolo": "Goalkeeper",
+            "minuti": 90,
+        }
+        for i, nome in enumerate(("Zeta", "Alfa"))
+    ]
+
+    prima = transform.costruisci_giocatori(transform.applica_tipi([]), pd.DataFrame(righe))
+    dopo = transform.costruisci_giocatori(
+        transform.applica_tipi([]), pd.DataFrame(list(reversed(righe)))
+    )
+
+    assert prima.iloc[0]["giocatore"] == "Alfa"
+    assert dopo.iloc[0]["giocatore"] == "Alfa"
+
+
 def test_senza_presenze_la_tabella_e_vuota_ma_valida() -> None:
     vuota = transform.costruisci_giocatori(transform.applica_tipi([]), pd.DataFrame())
+
     assert len(vuota) == 0
     assert list(vuota.columns) == list(transform.TIPI_GIOCATORI)
