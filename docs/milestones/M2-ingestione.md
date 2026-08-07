@@ -23,8 +23,11 @@ StatsBomb, e lo script che ha permesso di verificarlo.
 | File | Cosa fa |
 | --- | --- |
 | `src/football_analytics/config.py` | Tipo `Competizione`, enum `Gruppo` e `Copertura360`, le nove competizioni |
+| `src/football_analytics/ingest.py` | Lo strato 1: scaricamento incrementale, atomico, in parallelo, più il registro |
 | `tests/test_competizioni.py` | 14 test offline sul registro + 18 di rete che lo confrontano con StatsBomb |
+| `tests/test_ingest.py` | 21 test sull'ingestione, nessuno tocca la rete |
 | `scripts/esplora_open_data.py` | Conta le partite di ogni stagione dell'Open Data e ne riporta i dati 360 |
+| `scripts/scarica_dati.py` | La riga di comando dell'ingestione, con `--riepilogo` per il README |
 
 ## 3. Decisioni tecniche
 
@@ -64,6 +67,34 @@ Scartati per lo stesso motivo i frammenti di club con i 360 (La Liga 2020/21, Bu
 
 **Perché:** Euro 2020 ha 51 partite ed è la più piccola fra le competizioni complete scelte, ma ha i dati 360, quindi esercita anche il percorso dei freeze frame. Un difetto in `transform.py` si scopre dopo tre minuti invece che dopo venti, e si scopre su entrambi i rami del codice invece che su uno solo.
 
+### Scelta: HTTP diretto invece di `statsbombpy` per gli eventi
+
+**Alternativa scartata:** usare `statsbombpy` per tutto, come indicava il piano.
+
+**Perché:** la libreria restituisce DataFrame già appiattiti, e i freeze frame dei dati 360 sono profondamente annidati — contengono la posizione di ogni giocatore in campo al momento dell'evento. Appiattirli nello strato 1 per poi ricostruirli in M5 significa perdere informazione e scrivere due volte lo stesso codice. Lo strato 1 salva il JSON byte per byte, che è letteralmente cosa vuol dire «grezzo»; chi vuole i DataFrame se li costruisce nello strato 2.
+
+`statsbombpy` resta in uso per l'indice delle competizioni, dove la comodità del DataFrame non costa niente.
+
+### Scelta: scrittura atomica, non semplice «il file esiste»
+
+**Alternativa scartata:** scaricare direttamente sul percorso finale e saltare i file già presenti.
+
+**Perché:** sarebbe stato sufficiente finché nulla va storto. Se il processo muore a metà scaricamento — rete che cade, `Ctrl+C`, batteria scarica — sul disco resta un file **troncato**, che alla ripartenza verrebbe scambiato per completo. Il difetto non si manifesta subito: emerge in M3, quando `transform.py` trova un JSON malformato, e a quel punto nessuno collega la cosa all'ingestione.
+
+Ogni file viene quindi scritto in un temporaneo e poi rinominato, operazione atomica sia su Windows sia su Unix. Un file al percorso finale è per costruzione un file completo.
+
+### Scelta: i freeze frame si chiedono solo dove esistono
+
+**Alternativa scartata:** chiederli per tutte le partite e trattare il 404 come «assente».
+
+**Perché:** avrebbe funzionato, ma 1.535 partite su 1.753 non hanno i 360, e ogni esecuzione avrebbe prodotto 1.535 richieste destinate a fallire. La seconda esecuzione non sarebbe più finita «in pochi secondi» come richiede il criterio di M2-T2. Il file delle partite dichiara `match_status_360` per ognuna: si legge quello.
+
+### Scelta: il criterio di M2-T2 è verificato contando le richieste
+
+**Alternativa scartata:** un test che misura il tempo della seconda esecuzione.
+
+**Perché:** un test cronometrico passa o fallisce a seconda di quanto è carico il computer, e prima o poi diventa quel test che «ogni tanto fallisce» e che si finisce per ignorare. Il test sostituisce `preleva` con una funzione che conta le chiamate, e verifica che dopo la prima esecuzione il contatore non si muova più. Dice la verità sempre.
+
 ## 4. Numeri misurati
 
 Tutti da `scripts/esplora_open_data.py --tutte --min 30`, eseguito il 2026-08-07.
@@ -97,11 +128,36 @@ milestone esiste per intercettare.
 Nell'Open Data ci sono in tutto **445 partite con i dati 360**, distribuite su
 10 stagioni; il progetto ne usa 218.
 
+### Lo scaricamento, misurato su Euro 2020
+
+| Cosa | Valore | Come |
+| --- | --- | --- |
+| File scaricati | 153 | 51 partite × eventi + formazioni + freeze frame |
+| Durata, prima esecuzione | 10,1 s | 8 richieste in parallelo, ~15 file al secondo |
+| Durata, seconda esecuzione | 0,0 s | 0 file scaricati, 153 già presenti |
+| Peso su disco | 516,9 MB | `data/raw/manifest.json` |
+| Partite con dati 360 | 51 su 51 | `match_status_360` nel file delle partite |
+| File `.parziale` rimasti | 0 | la scrittura atomica non lascia residui |
+
+La seconda esecuzione a **0,0 secondi con zero file scaricati** è il criterio di
+completamento di M2-T2, verificato sul campo oltre che nei test.
+
+### Peso per partita, ed estrapolazione
+
+| | Per partita | Su 1.753 partite |
+| --- | ---: | ---: |
+| Eventi | 3,1 MB | ~5,4 GB |
+| Formazioni | 24 KB | ~42 MB |
+| Freeze frame (solo 218 partite) | 7,1 MB | ~1,5 GB |
+| **Totale stimato** | | **~7 GB** |
+
+La stima iniziale era di 4,5 GB ed era sbagliata del 50 %: veniva da un'ipotesi
+sulla dimensione dei file, non da una misura. Ora viene da 51 partite reali.
+
 | Cosa | Valore |
 | --- | --- |
-| Peso di `data/raw/` | \_\_ |
 | Durata dello scaricamento completo | \_\_ |
-| Partite con `has_360` vero (M2-T4) | \_\_ |
+| Peso finale di `data/raw/` | \_\_ |
 
 ## 5. Problemi incontrati
 

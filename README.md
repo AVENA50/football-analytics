@@ -96,17 +96,66 @@ football-analytics/
 
 ## Le competizioni
 
-| Competizione | Stagione | Partite | Dati 360 |
-| --- | --- | --- | --- |
-| Ligue 1 | 2021/22 | 380 | si' |
-| Bundesliga | 2023/24 | 306 | si' |
-| Serie A | 2015/16 | 380 | **no** |
-| Finali di Champions League | 1971–2019 | 18 | parziale |
+Nove competizioni, 1.753 partite, divise per scopo. I conteggi sono **misurati**
+con `scripts/esplora_open_data.py`, non stimati: il piano iniziale ne assumeva
+altri e si e' rivelato sbagliato su meta' delle fonti — il racconto e' in
+[`docs/milestones/M2-ingestione.md`](docs/milestones/M2-ingestione.md).
 
-La Serie A non ha i freeze frame, e da questo vincolo nasce la domanda piu'
-interessante del progetto: **quanto vale, davvero, sapere dove sono i
-difensori?** Si addestrano due modelli — uno con le variabili 360, uno senza —
-e la differenza fra i loro punteggi e' la risposta misurata.
+**Campionati 2015/16** — viste esplorative e modello base. Stessa stagione per
+tutti e quattro, cosi' il confronto fra leghe non confonde la differenza fra i
+campionati con quella fra le epoche.
+
+| Competizione | id | Partite | Dati 360 |
+| --- | --- | ---: | --- |
+| La Liga 2015/16 | 11, 27 | 380 | no |
+| Premier League 2015/16 | 2, 27 | 380 | no |
+| Serie A 2015/16 | 12, 27 | 380 | no |
+| Ligue 1 2015/16 | 7, 27 | 377 | no |
+
+**Tornei per nazionali** — le uniche competizioni complete dell'Open Data con i
+freeze frame. Qui i due modelli xG vengono addestrati e confrontati.
+
+| Competizione | id | Partite | Dati 360 |
+| --- | --- | ---: | --- |
+| Coppa del Mondo 2022 | 43, 106 | 64 | **si** |
+| Coppa d'Africa 2023 | 1267, 107 | 52 | **si** |
+| Campionato Europeo 2024 | 55, 282 | 51 | **si** |
+| Campionato Europeo 2020 | 55, 43 | 51 | **si** |
+
+**Finali di Champions League** — 18 finali dal 1971 al 2019, `competition_id`
+16, senza freeze frame. Il modello base vi viene **applicato**, non addestrato:
+un modello si valuta su dati che non ha mai visto.
+
+### La domanda che regge il progetto
+
+> **Quanto vale, davvero, sapere dove sono i difensori?**
+
+Sulle 218 partite dei tornei si addestrano **due modelli** sulle stesse identiche
+partite: uno con le variabili ricavate dai freeze frame — difensori nel cono di
+tiro, distanza del portiere — e uno senza. La differenza fra i loro punteggi,
+misurata sullo stesso insieme di verifica, e' la risposta.
+
+Poi il modello base si applica ai campionati e alle finali, dove l'altro non
+potrebbe girare.
+
+## Stato dello scaricamento
+
+Generato da `data/raw/manifest.json`, che l'ingestione aggiorna da sola.
+Rigenerabile con `uv run python scripts/scarica_dati.py --riepilogo`.
+
+| Competizione | Gruppo | Partite | Con dati 360 | Peso |
+| --- | --- | ---: | ---: | ---: |
+| Campionato Europeo 2020 | torneo | 51 | 51 | 516,9 MB |
+| **Totale** | | **51** | **51** | **516,9 MB** |
+
+Lo scaricamento e' incrementale e ripartibile: rilanciarlo su dati gia' presenti
+non produce nessuna richiesta di contenuto e termina in meno di un secondo.
+
+```bash
+uv run python scripts/scarica_dati.py                   # la prima competizione
+uv run python scripts/scarica_dati.py --gruppo torneo   # tutti i tornei
+uv run python scripts/scarica_dati.py --tutte           # tutto, circa 7 GB
+```
 
 I numeri del modello (log loss, Brier score, AUC, scarto dall'xG di StatsBomb)
 compariranno qui quando M5 sara' conclusa. Non prima: in questo repository non

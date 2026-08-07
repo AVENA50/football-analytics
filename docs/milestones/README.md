@@ -38,7 +38,8 @@ ricalcolano a mano.
 | Competizioni scelte | 9 | M2 |
 | Partite disponibili | 1.753 | M2 |
 | Di cui con dati 360 | 218 | M2 |
-| Partite scaricate | — | M2 |
+| Partite scaricate | 51 | M2 |
+| Peso di `data/raw/` | 516,9 MB | M2 |
 | Tiri analizzati | — | M3 |
 | Peso di `data/processed/` | — | M3 |
 | Brier score, modello base | — | M5 |
