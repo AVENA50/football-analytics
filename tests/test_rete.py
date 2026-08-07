@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 import pytest
 
-from football_analytics import ingest, transform
+from football_analytics import config, ingest, transform
 from football_analytics.config import EURO_2020
 from football_analytics.transform import CELLE_X, CELLE_Y, QualitaError
 
@@ -247,8 +247,8 @@ def test_una_cella_fuori_griglia_viene_segnalata(
         transform.controlla(tabelle)
 
 
-def test_le_cinque_tabelle_coerenti_passano(tabelle: dict[str, pd.DataFrame]) -> None:
-    assert set(tabelle) == {"shots", "matches", "player_stats", "passes", "touches"}
+def test_tutte_le_tabelle_coerenti_passano(tabelle: dict[str, pd.DataFrame]) -> None:
+    assert set(tabelle) == set(config.TABELLE)
     transform.controlla(tabelle)
 
 

@@ -146,6 +146,155 @@ def test_le_formule_funzionano_su_interi_vettori() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Il cono di tiro (M5-T2)
+# ---------------------------------------------------------------------------
+
+
+def dentro(gx: float, gy: float, tx: float, ty: float) -> bool:
+    """Dice se un giocatore cade nel cono di un tiro.
+
+    Args:
+        gx: Ascissa del giocatore.
+        gy: Ordinata del giocatore.
+        tx: Ascissa del tiro.
+        ty: Ordinata del tiro.
+
+    Returns:
+        Vero se il giocatore e' nel triangolo fra il tiro e i due pali.
+    """
+    return bool(
+        features.nel_cono(np.array([gx]), np.array([gy]), np.array([tx]), np.array([ty]))[0]
+    )
+
+
+def test_un_difensore_davanti_al_pallone_e_nel_cono() -> None:
+    assert dentro(114.0, 40.0, 108.0, 40.0)
+
+
+def test_un_difensore_alle_spalle_di_chi_tira_non_lo_e() -> None:
+    # Sta dietro al pallone: non puo' intercettare niente.
+    assert not dentro(100.0, 40.0, 108.0, 40.0)
+
+
+def test_un_difensore_dietro_la_porta_non_lo_e() -> None:
+    assert not dentro(125.0, 40.0, 108.0, 40.0)
+
+
+def test_un_difensore_di_lato_non_lo_e() -> None:
+    assert not dentro(114.0, 55.0, 108.0, 40.0)
+
+
+def test_un_difensore_sul_palo_e_dentro() -> None:
+    # Il bordo conta: e' esattamente la posizione da cui si salva sulla linea.
+    assert dentro(PORTA_X, 36.0, 108.0, 40.0)
+
+
+def test_il_cono_si_restringe_avvicinandosi_alla_porta() -> None:
+    # Da (110, 40) il triangolo a x = 112 va da y = 39,2 a y = 40,8: un
+    # difensore a 38 e' di fianco, non davanti. E' controintuitivo a occhio,
+    # ed e' il motivo per cui questo test esiste.
+    assert dentro(112.0, 40.0, 110.0, 40.0)
+    assert not dentro(112.0, 38.0, 110.0, 40.0)
+
+
+def test_il_cono_di_un_tiro_laterale_e_obliquo() -> None:
+    assert dentro(110.0, 30.0, 100.0, 20.0)
+    assert not dentro(110.0, 60.0, 100.0, 20.0)
+
+
+# ---------------------------------------------------------------------------
+# Le variabili spaziali
+# ---------------------------------------------------------------------------
+
+
+def fotogramma_di_prova() -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Un tiro con tre giocatori inquadrati, in posizioni scelte a mano.
+
+    Returns:
+        La tabella dei tiri e quella dei fotogrammi.
+    """
+    tiri = pd.DataFrame([{"shot_id": "s1", "x": 110.0, "y": 40.0}])
+    fotogrammi = pd.DataFrame(
+        [
+            # portiere avversario, otto metri davanti, due fuori dalla linea
+            {"shot_id": "s1", "x": 118.0, "y": 40.0, "compagno": False, "portiere": True},
+            # difensore addosso a chi tira ma di fianco: fuori dal cono
+            {"shot_id": "s1", "x": 112.0, "y": 38.0, "compagno": False, "portiere": False},
+            # compagno in area
+            {"shot_id": "s1", "x": 108.0, "y": 44.0, "compagno": True, "portiere": False},
+        ]
+    )
+    return tiri, fotogrammi
+
+
+def test_le_variabili_spaziali_sulla_configurazione_nota() -> None:
+    tiri, fotogrammi = fotogramma_di_prova()
+    v = features.variabili_spaziali(tiri, fotogrammi).iloc[0]
+
+    assert v["distanza_portiere"] == pytest.approx(8.0)
+    assert v["portiere_avanzato"] == pytest.approx(2.0)
+    assert v["avversari_vicini"] == 1  # il difensore, a 2,83 metri
+    assert v["compagni_in_area"] == 1
+
+
+def test_il_portiere_non_conta_fra_i_difensori_nel_cono() -> None:
+    # Il portiere e' dentro il cono, ma ha variabili proprie: contarlo anche
+    # li' significherebbe misurare due volte la stessa cosa.
+    tiri, fotogrammi = fotogramma_di_prova()
+    assert float(features.variabili_spaziali(tiri, fotogrammi).iloc[0]["difensori_nel_cono"]) == 0.0
+
+
+def test_un_difensore_nel_cono_viene_contato() -> None:
+    tiri, fotogrammi = fotogramma_di_prova()
+    aggiunto = pd.concat(
+        [
+            fotogrammi,
+            pd.DataFrame(
+                [{"shot_id": "s1", "x": 115.0, "y": 40.0, "compagno": False, "portiere": False}]
+            ),
+        ]
+    )
+    assert float(features.variabili_spaziali(tiri, aggiunto).iloc[0]["difensori_nel_cono"]) == 1.0
+
+
+def test_senza_fotogramma_le_variabili_restano_mancanti() -> None:
+    # E' la regola del piano: mai riempire con zeri. Uno zero significherebbe
+    # «nessun difensore davanti», che e' l'opposto di «non lo sappiamo».
+    tiri, _ = fotogramma_di_prova()
+    vuoti = pd.DataFrame(columns=["shot_id", "x", "y", "compagno", "portiere"])
+
+    v = features.variabili_spaziali(tiri, vuoti)
+
+    assert v.isna().all(axis=None)
+
+
+def test_uno_zero_e_un_fatto_quando_il_fotogramma_c_e() -> None:
+    # Distinzione che regge tutto: se il fotogramma esiste e non contiene
+    # difensori nel cono, lo zero e' una misura. Se il fotogramma manca, e'
+    # un'ignoranza. I due casi non devono avere lo stesso valore.
+    tiri, fotogrammi = fotogramma_di_prova()
+    solo_portiere = fotogrammi[fotogrammi["portiere"]]
+
+    v = features.variabili_spaziali(tiri, solo_portiere).iloc[0]
+
+    assert float(v["difensori_nel_cono"]) == 0.0
+    assert float(v["compagni_in_area"]) == 0.0
+    assert not math.isnan(float(v["distanza_portiere"]))
+
+
+def test_un_tiro_senza_il_suo_fotogramma_resta_mancante() -> None:
+    tiri = pd.DataFrame(
+        [{"shot_id": "s1", "x": 110.0, "y": 40.0}, {"shot_id": "s2", "x": 100.0, "y": 30.0}]
+    )
+    _, fotogrammi = fotogramma_di_prova()
+
+    v = features.variabili_spaziali(tiri, fotogrammi)
+
+    assert not v.iloc[0].isna().any()
+    assert v.iloc[1].isna().all()
+
+
+# ---------------------------------------------------------------------------
 # La selezione dei tiri
 # ---------------------------------------------------------------------------
 
