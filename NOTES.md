@@ -575,6 +575,41 @@ ma come **prova di onesta'**: dichiarare di quanto si e' peggiori di un
 fornitore professionale e' piu' credibile che scegliere una metrica su cui si
 vince.
 
+### 2026-08-07 · M5-T3 · una soglia tarata sull'intuizione invece che sulla statistica
+
+**Cosa:** il test che verifica che la divisione train/test non sbilanci la
+classe positiva chiedeva che le due frequenze di gol differissero di meno di
+0,02. Sul campione sintetico dava 0,0984 contro 0,1212 — differenza 0,0228,
+fallito.
+
+**Come si e' capito:** invece di alzare la soglia, ho misurato sui dati veri.
+Li' la differenza e' **0,0005**, cioe' 0,2 deviazioni standard, e su dieci seed
+diversi il massimo e' 0,0079. La divisione funziona benissimo: era il test a
+essere sbagliato.
+
+**La causa:** il campione sintetico ha 12.500 tiri, i dati veri 43.179. Lo
+scarto atteso per puro caso e' tre volte piu' grande sul primo. Una soglia
+**fissa** e' implicitamente tarata sulla dimensione del campione con cui e'
+stata scritta, e trasferirla altrove non ha senso.
+
+**Risolto:** soglia espressa in **deviazioni standard** invece che in punti
+percentuali:
+
+```python
+errore_standard = math.sqrt(p * (1 - p) * (1 / len(train) + 1 / len(test)))
+assert abs(gol_train - gol_test) < 4 * errore_standard
+```
+
+Cosi' vale a qualunque dimensione del campione, e dice una cosa precisa —
+«questa differenza e' compatibile con il caso» — invece di una arbitraria.
+
+**Cosa insegna:** e' il caso gemello dei due tiri a venti centimetri oltre la
+linea. Li' il controllo era troppo severo e i dati erano sani; qui la soglia
+era arbitraria e i dati erano sani. In entrambi i casi la tentazione era
+allentare il numero finche' passava, e in entrambi la risposta giusta e' stata
+**capire da dove doveva venire il numero**. Una soglia che non si sa derivare
+e' una soglia che prima o poi verra' allentata a caso.
+
 ---
 
 <!--
