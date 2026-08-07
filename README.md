@@ -75,6 +75,30 @@ uv run pytest               # test con misura della copertura
 Gli stessi comandi girano in CI a ogni push e a ogni pull request, in due job
 separati: **Lint e tipi** e **Test**.
 
+### Se Windows blocca i comandi
+
+Su un sistema con **Smart App Control** o una policy WDAC attiva, comandi come
+`uv run mypy` o `uv run jupyter` possono fallire con
+`Un criterio di controllo dell'applicazione ha bloccato il file`. Non e' un
+problema del progetto: uv genera in `.venv\Scripts\` un piccolo eseguibile per
+ogni comando, e quei binari non sono firmati.
+
+La regola che li risolve tutti — invocare il **modulo** invece
+dell'eseguibile:
+
+```powershell
+uv run python -m nbconvert ...     # invece di  uv run jupyter nbconvert ...
+uv run python -m jupyterlab        # invece di  uv run jupyter lab
+```
+
+Per `mypy`, che viene distribuito compilato, serve costruirlo da sorgente una
+volta sola:
+
+```powershell
+[System.Environment]::SetEnvironmentVariable('UV_NO_BINARY_PACKAGE','mypy','User')
+uv sync --all-extras --reinstall-package mypy
+```
+
 ---
 
 ## Struttura
@@ -125,6 +149,42 @@ contesto su quasi tutte le partite.
 **Finali di Champions League** — 18 finali dal 1971 al 2019, `competition_id`
 16, senza freeze frame. Il modello base vi viene **applicato**, non addestrato:
 un modello si valuta su dati che non ha mai visto.
+
+## Le tre domande
+
+Scelte dopo aver guardato i dati, non prima. Il ragionamento completo e' nel
+[notebook di esplorazione](notebooks/esplorazione.ipynb) e in
+[`docs/milestones/M4-esplorazione.md`](docs/milestones/M4-esplorazione.md).
+
+### 1. Quanto vale sapere dove sono i difensori?
+
+Sui 41.179 tiri su azione, la conversione passa dal **38,9 %** con due
+avversari inquadrati al **7,2 %** con otto o piu' — un fattore cinque **a
+distanza di tiro quasi costante**, fra i 16 e i 18 metri. Non e' che con pochi
+difensori si tira da piu' vicino: si tira da lontano uguale e si segna molto
+di piu'.
+
+Due modelli addestrati sulle stesse partite, uno con le variabili ricavate dal
+fotogramma e uno senza, misurano quanto di quel segnale un modello riesce
+davvero a catturare.
+
+### 2. Chi segna piu' di quanto dovrebbe, e per quanto tempo?
+
+La differenza fra gol e xG e' la misura piu' fraintesa del calcio analitico: su
+un giocatore e mezza stagione e' quasi solo fortuna. Su 43.849 tiri si puo'
+guardare quanto quello scarto persista davvero.
+
+La soglia dei 500 minuti non e' cosmetica — senza, il miglior marcatore per
+novanta minuti e' sempre uno entrato al 90°.
+
+### 3. Le leghe giocano davvero in modo diverso?
+
+Si somigliano nei gol — da 2,52 a 2,74 per partita — ma non nel modo di
+arrivarci: **Serie A e Premier tirano di piu' della Liga e producono meno xG**.
+Si tira di piu' da posizioni peggiori.
+
+Quattro campionati della **stessa stagione** permettono di dirlo senza che
+l'epoca faccia da variabile nascosta.
 
 ### La domanda che regge il progetto
 

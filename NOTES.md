@@ -435,6 +435,84 @@ che sono veri.
 
 ---
 
+## M4 — Esplorazione
+
+### 2026-08-07 · M4-T1 · un numero che non tornava con un altro numero
+
+**Cosa:** guardando la conversione per numero di avversari nel fotogramma, il
+gruppo con zero o un avversario aveva conversione **12,7 %** e xG medio
+**0,788**. Un xG da rigore con una conversione da tiro da trenta metri.
+
+**Come si e' capito:** non era un errore, era una **contraddizione interna**.
+Ogni altro gruppo aveva conversione e xG allineati; solo quello no. Un numero
+che non torna con un altro numero e' un invito a guardare, non un'anomalia da
+annotare.
+
+Erano rigori. E allora:
+
+| Rigori | Numero | Conversione |
+| --- | ---: | ---: |
+| **senza** fotogramma | 426 | **81,9 %** |
+| **con** fotogramma | 54 | **11,1 %** |
+
+Il fotogramma di un rigore contiene **solo il portiere**, e StatsBomb lo allega
+quasi esclusivamente quando il rigore non entra: serve a registrare la
+posizione del portiere per analizzare la parata.
+
+**Perche' e' grave:** la presenza del dato dipende dal risultato. E'
+distorsione da selezione, e un modello la impara volentieri — imparerebbe
+«fotogramma presente, quindi sbagliato», che non e' calcio ma un artefatto di
+raccolta. Sarebbe entrata in M5 senza che niente segnalasse un problema,
+perche' non c'e' nessun errore da intercettare: i dati sono corretti, e' il
+**modo in cui esistono** a essere informativo nel modo sbagliato.
+
+**Risolto:** i rigori restano fuori dal modello — che e' comunque la prassi,
+hanno xG fisso — e `ha_fotogramma` non sara' mai una variabile.
+
+**La verifica che salva il progetto:** sui tiri su azione la copertura del
+fotogramma e' **100 %**, 41.179 su 41.179. La distorsione e' confinata ai
+rigori, quindi il confronto fra modello base e modello spaziale si puo' fare
+su tutti i tiri di gioco senza correzioni. Se la copertura fosse stata parziale
+anche li', M5 sarebbe stato un problema molto diverso.
+
+**Cosa insegna:** e' il primo difetto della giornata che **nessun controllo
+automatico avrebbe potuto trovare**. Non c'e' un `NaN`, un duplicato, un totale
+che non torna: i dati sono tutti validi. Emerge solo guardando le distribuzioni
+e chiedendosi perche' due numeri non stiano insieme. E' esattamente il lavoro
+per cui M4 esiste, ed e' il motivo per cui saltarla per arrivare prima al
+modello sarebbe stato un pessimo affare.
+
+### 2026-08-07 · M4-T1 · la regola generale su Smart App Control
+
+**Cosa:** `uv run jupyter nbconvert` bloccato con
+`[WinError 4551] Un criterio di controllo dell'applicazione ha bloccato il
+file`. Terza manifestazione dello stesso vincolo dopo l'interprete Python di uv
+(M1-T2) e i binari mypyc di mypy (M1-T4).
+
+**Come si e' capito:** il blocco non riguardava `jupyter` ma
+`jupyter-nbconvert.exe`, il piccolo eseguibile che uv genera in
+`.venv\Scripts\` per ogni comando dichiarato da un pacchetto. Sono binari non
+firmati creati in una cartella utente: il profilo esatto che la policy blocca.
+
+**Risolto, e vale come regola generale su questa macchina:**
+
+> Invocare il **modulo** Python, non l'eseguibile generato.
+> `uv run python -m nbconvert` invece di `uv run jupyter nbconvert`.
+
+Cosi' gira `python.exe`, che e' una copia del Python 3.12 ufficiale ed e'
+firmato — ed e' il motivo per cui `uv run python` ha sempre funzionato mentre
+`uv run mypy` no. Il modulo viene importato, non eseguito come binario a se'.
+
+**Cosa insegna:** i primi due casi li avevo risolti uno per uno, con due
+rimedi diversi — cambiare interprete, ricompilare mypy da sorgente. Solo al
+terzo ho visto che erano **la stessa cosa**, e che esiste un rimedio unico che
+li copre tutti. E' lo stesso schema del gol del Marsiglia: la lezione
+imparata su un caso non era stata cercata altrove. Tre occorrenze sono il
+momento in cui conviene fermarsi e chiedersi qual e' la regola, invece di
+applicare la terza toppa.
+
+---
+
 <!--
 Le milestone successive aggiungono qui la loro sezione.
 Almeno un'annotazione per milestone: e' il criterio di M7-T6.
