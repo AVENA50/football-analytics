@@ -1,16 +1,25 @@
-"""Percorsi e costanti condivise da tutti gli strati del progetto.
+"""Percorsi, costanti e competizioni scelte, condivisi da tutti gli strati.
 
 Questo modulo e' l'unica fonte dei percorsi: nessun altro file costruisce a mano
 una stringa come ``"data/processed/shots.parquet"``. Il motivo e' pratico —
 l'app Streamlit puo' essere avviata da una directory di lavoro qualsiasi, e i
 percorsi relativi si romperebbero senza dare un errore leggibile.
 
-Gli identificativi delle competizioni arrivano in M2-T1: qui restano solo le
-costanti che M1 puo' verificare.
+Vale lo stesso per le competizioni: gli identificativi di StatsBomb stanno qui
+e da nessun'altra parte.
+
+**Le competizioni non sono quelle del piano iniziale.** Il piano assumeva 380
+partite di Ligue 1 2021/22 e 306 di Bundesliga 2023/24; ce ne sono 26 e 34,
+perche' StatsBomb a volte pubblica solo il sottoinsieme legato a un tema — le
+partite di un giocatore, la stagione di una squadra. La verifica di M2-T1 lo ha
+scoperto e le fonti sono state riscelte sui dati reali. Il racconto completo e'
+in ``docs/milestones/M2-ingestione.md``.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Final
 
@@ -32,6 +41,251 @@ MODELS_DIR: Final[Path] = PROJECT_ROOT / "models"
 
 #: Registro dello scaricamento, scritto dall'ingestione (M2-T3).
 MANIFEST_PATH: Final[Path] = DATA_RAW / "manifest.json"
+
+# ---------------------------------------------------------------------------
+# Competizioni
+# ---------------------------------------------------------------------------
+
+
+class Copertura360(StrEnum):
+    """Quanto una competizione dispone dei freeze frame di StatsBomb.
+
+    I dati 360 dicono dove stavano tutti i giocatori al momento del tiro, e
+    sono la variabile piu' utile del modello xG: quanti difensori c'erano fra
+    il pallone e la porta.
+
+    Questo e' il valore **dichiarato** da StatsBomb nel file delle
+    competizioni. La verita' partita per partita la stabilisce M2-T4, e
+    finisce nella colonna ``has_360`` di ``shots.parquet``.
+
+    Attributes:
+        COMPLETA: Tutte le stagioni della competizione hanno i freeze frame.
+        ASSENTE: Nessuna li ha. Qui gira solo il modello base.
+        PARZIALE: Alcune si', altre no. Va deciso stagione per stagione.
+    """
+
+    COMPLETA = "completa"
+    ASSENTE = "assente"
+    PARZIALE = "parziale"
+
+
+class Gruppo(StrEnum):
+    """A cosa serve una competizione dentro il progetto.
+
+    La separazione nasce da un vincolo dei dati: nessun campionato completo ha
+    i freeze frame, e nessuna competizione con i freeze frame e' un campionato
+    completo. Volerle usare per la stessa cosa significherebbe scegliere fra
+    volume e ricchezza; tenerle distinte permette di avere entrambi.
+
+    Attributes:
+        CAMPIONATO: Stagioni complete di lega. Alimentano le viste
+            esplorative e il modello base. Nessun dato 360.
+        TORNEO: Tornei per nazionali con i freeze frame. Sono le partite su
+            cui base e 360 vengono addestrati e confrontati.
+        FINALI: Le finali di Champions League, su cui il modello base viene
+            **applicato** a dati che non ha mai visto.
+    """
+
+    CAMPIONATO = "campionato"
+    TORNEO = "torneo"
+    FINALI = "finali"
+
+
+@dataclass(frozen=True, slots=True)
+class Competizione:
+    """Una competizione-stagione fra quelle su cui lavora il progetto.
+
+    Attributes:
+        chiave: Nome breve e stabile, usato nei percorsi e nei filtri.
+        nome: Nome leggibile della competizione.
+        stagione: Stagione in forma leggibile, oppure l'intervallo di anni.
+        competition_id: Identificativo StatsBomb della competizione.
+        season_id: Identificativo StatsBomb della stagione. Vale ``None``
+            quando servono **tutte** le stagioni disponibili: e' il caso delle
+            finali di Champions, dove l'Open Data contiene una sola partita per
+            stagione e l'insieme interessante e' l'intera competizione.
+        gruppo: A quale scopo serve la competizione.
+        copertura_360: Disponibilita' dei freeze frame dichiarata da StatsBomb.
+        partite_attese: Quante partite ci si aspetta di trovare. Questi numeri
+            sono **misurati**, non stimati: vengono dall'esecuzione di
+            ``scripts/esplora_open_data.py`` del 2026-08-07.
+    """
+
+    chiave: str
+    nome: str
+    stagione: str
+    competition_id: int
+    season_id: int | None
+    gruppo: Gruppo
+    copertura_360: Copertura360
+    partite_attese: int
+
+    @property
+    def etichetta(self) -> str:
+        """Nome e stagione in una stringa sola, per menu e titoli.
+
+        Returns:
+            Una stringa come ``"Serie A 2015/2016"``.
+        """
+        return f"{self.nome} {self.stagione}"
+
+    @property
+    def tutte_le_stagioni(self) -> bool:
+        """Indica se la competizione va scaricata per intero.
+
+        Returns:
+            ``True`` quando ``season_id`` e' ``None``.
+        """
+        return self.season_id is None
+
+
+# --- I quattro campionati 2015/16 ------------------------------------------
+#
+# Stessa stagione per tutti e quattro, e non e' un dettaglio: confrontare
+# leghe di annate diverse non permette di distinguere la differenza fra i
+# campionati da quella fra le epoche. Il piano iniziale prendeva tre leghe da
+# tre stagioni distanti fino a otto anni; questo insieme toglie l'ambiguita'.
+# Nessuno di questi ha i dati 360.
+
+LA_LIGA_2015_16: Final[Competizione] = Competizione(
+    chiave="la_liga_2015_16",
+    nome="La Liga",
+    stagione="2015/2016",
+    competition_id=11,
+    season_id=27,
+    gruppo=Gruppo.CAMPIONATO,
+    copertura_360=Copertura360.ASSENTE,
+    partite_attese=380,
+)
+
+PREMIER_2015_16: Final[Competizione] = Competizione(
+    chiave="premier_2015_16",
+    nome="Premier League",
+    stagione="2015/2016",
+    competition_id=2,
+    season_id=27,
+    gruppo=Gruppo.CAMPIONATO,
+    copertura_360=Copertura360.ASSENTE,
+    partite_attese=380,
+)
+
+SERIE_A_2015_16: Final[Competizione] = Competizione(
+    chiave="serie_a_2015_16",
+    nome="Serie A",
+    stagione="2015/2016",
+    competition_id=12,
+    season_id=27,
+    gruppo=Gruppo.CAMPIONATO,
+    copertura_360=Copertura360.ASSENTE,
+    partite_attese=380,
+)
+
+# 377 e non 380: tre partite mancano nell'Open Data. Il numero e' quello
+# misurato, non quello che ci si aspetterebbe da un campionato a venti squadre.
+LIGUE_1_2015_16: Final[Competizione] = Competizione(
+    chiave="ligue1_2015_16",
+    nome="Ligue 1",
+    stagione="2015/2016",
+    competition_id=7,
+    season_id=27,
+    gruppo=Gruppo.CAMPIONATO,
+    copertura_360=Copertura360.ASSENTE,
+    partite_attese=377,
+)
+
+# --- I tornei per nazionali con i dati 360 ---------------------------------
+#
+# Sono le uniche competizioni **complete** dell'Open Data ad avere i freeze
+# frame. I frammenti di club che li possiedono (La Liga 2020/21, Bundesliga
+# 2023/24, Ligue 1 2021/22 e 2022/23) restano fuori: riguardano una squadra
+# sola, quindi il campione non e' rappresentativo del campionato da cui viene.
+
+MONDIALI_2022: Final[Competizione] = Competizione(
+    chiave="mondiali_2022",
+    nome="Coppa del Mondo",
+    stagione="2022",
+    competition_id=43,
+    season_id=106,
+    gruppo=Gruppo.TORNEO,
+    copertura_360=Copertura360.COMPLETA,
+    partite_attese=64,
+)
+
+COPPA_AFRICA_2023: Final[Competizione] = Competizione(
+    chiave="coppa_africa_2023",
+    nome="Coppa d'Africa",
+    stagione="2023",
+    competition_id=1267,
+    season_id=107,
+    gruppo=Gruppo.TORNEO,
+    copertura_360=Copertura360.COMPLETA,
+    partite_attese=52,
+)
+
+EURO_2024: Final[Competizione] = Competizione(
+    chiave="euro_2024",
+    nome="Campionato Europeo",
+    stagione="2024",
+    competition_id=55,
+    season_id=282,
+    gruppo=Gruppo.TORNEO,
+    copertura_360=Copertura360.COMPLETA,
+    partite_attese=51,
+)
+
+EURO_2020: Final[Competizione] = Competizione(
+    chiave="euro_2020",
+    nome="Campionato Europeo",
+    stagione="2020",
+    competition_id=55,
+    season_id=43,
+    gruppo=Gruppo.TORNEO,
+    copertura_360=Copertura360.COMPLETA,
+    partite_attese=51,
+)
+
+# --- Le finali di Champions ------------------------------------------------
+
+CHAMPIONS_FINALI: Final[Competizione] = Competizione(
+    chiave="champions_finali",
+    nome="Finali di Champions League",
+    stagione="1971-2019",
+    competition_id=16,
+    season_id=None,
+    gruppo=Gruppo.FINALI,
+    copertura_360=Copertura360.ASSENTE,
+    partite_attese=18,
+)
+
+#: I quattro campionati completi: viste esplorative e modello base.
+CAMPIONATI: Final[tuple[Competizione, ...]] = (
+    LA_LIGA_2015_16,
+    PREMIER_2015_16,
+    SERIE_A_2015_16,
+    LIGUE_1_2015_16,
+)
+
+#: I tornei con i freeze frame: qui base e 360 si confrontano.
+TORNEI_360: Final[tuple[Competizione, ...]] = (
+    MONDIALI_2022,
+    COPPA_AFRICA_2023,
+    EURO_2024,
+    EURO_2020,
+)
+
+#: Tutte le competizioni del progetto.
+COMPETIZIONI: Final[tuple[Competizione, ...]] = (
+    *CAMPIONATI,
+    *TORNEI_360,
+    CHAMPIONS_FINALI,
+)
+
+#: La competizione da cui parte lo scaricamento (M2-T5).
+#:
+#: Euro 2020 e' la piu' piccola fra quelle complete e ha i dati 360, quindi
+#: esercita anche il percorso dei freeze frame. Se ``transform.py`` ha un
+#: difetto lo si scopre su 51 partite invece che su 380.
+PRIMA_COMPETIZIONE: Final[Competizione] = EURO_2020
 
 # ---------------------------------------------------------------------------
 # Tabelle del "magazzino"
@@ -62,6 +316,39 @@ SEED: Final[int] = 42
 ATTRIBUZIONE: Final[str] = (
     "Dati forniti da StatsBomb Open Data — https://github.com/statsbomb/open-data"
 )
+
+
+def competizione(chiave: str) -> Competizione:
+    """Restituisce una competizione a partire dalla sua chiave.
+
+    Args:
+        chiave: La chiave breve, per esempio ``"serie_a_2015_16"``.
+
+    Returns:
+        La competizione corrispondente.
+
+    Raises:
+        ValueError: Se la chiave non esiste. Meglio fallire qui che ritrovarsi
+            un ``None`` propagato per tre livelli di chiamate.
+    """
+    for voce in COMPETIZIONI:
+        if voce.chiave == chiave:
+            return voce
+    attese = ", ".join(c.chiave for c in COMPETIZIONI)
+    msg = f"Competizione sconosciuta: {chiave!r}. Attese: {attese}."
+    raise ValueError(msg)
+
+
+def del_gruppo(gruppo: Gruppo) -> tuple[Competizione, ...]:
+    """Restituisce le competizioni di un gruppo.
+
+    Args:
+        gruppo: Il gruppo da filtrare.
+
+    Returns:
+        Le competizioni che vi appartengono, nell'ordine di dichiarazione.
+    """
+    return tuple(c for c in COMPETIZIONI if c.gruppo is gruppo)
 
 
 def percorso_tabella(nome: str) -> Path:
