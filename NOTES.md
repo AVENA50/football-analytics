@@ -286,6 +286,25 @@ Una pipeline puo' essere internamente coerente e sbagliata: basta un errore
 sistematico che si propaga ovunque. Il confronto con l'esterno e' l'unico che
 lo smaschera, e vale la pena cercarne uno per ogni tabella prodotta.
 
+### 2026-08-07 · M3-T4 · un test che guastava la tabella con lo stesso valore
+
+**Cosa:** `test_un_gol_incoerente_con_l_esito_viene_segnalato` falliva con
+`DID NOT RAISE`.
+
+**Come si e' capito:** il test scriveva `gol = True` sulla prima riga di
+`shots` per creare un'incoerenza. Ma la prima riga e' il gol del 12': aveva
+gia' `gol` vero. Il controllo non scattava perche' non c'era niente da trovare.
+
+**Risolto:** `gol = False`, piu' un'asserzione che verifica il valore di
+partenza prima di guastarlo — cosi' l'errore non puo' ripetersi in silenzio.
+
+**Cosa insegna:** e' esattamente cio' contro cui metteva in guardia la
+docstring del file, «un controllo mai visto fallire non e' un controllo». Vale
+anche per il test stesso: un test negativo che passa perche' non ha davvero
+introdotto l'anomalia e' peggio di nessun test, perche' da' fiducia
+ingiustificata. Quando si scrive un test che si aspetta un fallimento, va
+verificato **anche** che la condizione di partenza fosse sana.
+
 ---
 
 <!--
