@@ -4,8 +4,22 @@
 data/raw/*
 !data/raw/.gitkeep
 
-# I Parquet di data/processed/ SONO versionati: sono cio' che Streamlit Cloud
-# deve trovare quando clona il repository. Non aggiungerli qui.
+# --- Dati trasformati: esclusi FINO A M7-T1 --------------------------------
+#
+# I Parquet di data/processed/ devono finire in git: sono cio' che Streamlit
+# Cloud trova quando clona il repository, ed e' il criterio di M7-T1.
+#
+# Ma non adesso. Sono ancora un cantiere: si rigenerano a ogni passo — quando
+# arrivano passes e touches, quando si scaricano le altre competizioni, quando
+# M5 aggiunge l'xG calcolato. Git non sa fare diff dei binari, quindi ogni
+# versione e' una copia intera: a regime sono ~4 MB l'uno, e otto rigenerazioni
+# farebbero decine di megabyte di cronologia che nessuno potra' piu' togliere,
+# perche' main e' protetto contro il force push di proposito.
+#
+# Si versionano quando sono il prodotto finito, non mentre sono in costruzione.
+#
+# >>> A M7-T1: cancellare le due righe qui sotto e committare i Parquet. <<<
+data/processed/*.parquet
 
 # --- Python ----------------------------------------------------------------
 __pycache__/

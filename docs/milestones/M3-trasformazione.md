@@ -180,6 +180,11 @@ proprio i risultati.
 
 ## 6. Cosa resta aperto
 
+- **I Parquet non sono versionati, e non ancora di proposito.** M7-T1 li vuole
+  in git, ma finché si rigenerano a ogni passo ogni versione sarebbe una copia
+  intera nella cronologia — git non fa diff dei binari — e `main` è protetto
+  contro il force push, quindi non si tornerebbe indietro. Sono esclusi da
+  `.gitignore` con un promemoria esplicito per M7-T1.
 - **`freeze_frames.parquet` non esiste ancora.** Il contenuto dei fotogrammi
   serve a M5 per calcolare i difensori nel cono di tiro. Sarà una tabella a
   parte, una riga per giocatore inquadrato — una deviazione consapevole dalle
