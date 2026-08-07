@@ -17,7 +17,7 @@ più.
 | --- | --- | --- | --- | --- |
 | M1 | Fondamenta | 7 | 🟢 conclusa | [M1-fondamenta.md](M1-fondamenta.md) |
 | M2 | Ingestione | 7 | 🟢 conclusa | [M2-ingestione.md](M2-ingestione.md) |
-| M3 | Trasformazione | 8 | 🟡 in corso | [M3-trasformazione.md](M3-trasformazione.md) |
+| M3 | Trasformazione | 8 | 🟢 conclusa | [M3-trasformazione.md](M3-trasformazione.md) |
 | M4 | Esplorazione | 3 | ⚪ da fare | — |
 | M5 | Modello xG | 12 | ⚪ da fare | — |
 | M6 | Dashboard | 14 | ⚪ da fare | — |
@@ -39,6 +39,11 @@ ricalcolano a mano.
 | Partite scaricate | 1.753 | M2 |
 | Di cui con file 360 | 167 | M2 |
 | Peso di `data/raw/` | 6,25 GB | M2 |
+| Tiri analizzati | 43.849 | M3 |
+| Gol | 4.578 | M3 |
+| Tiri con freeze frame | 43.264 — 99 % | M3 |
+| Peso di `data/processed/` | 2,87 MB | M3 |
+| Test automatici | 131 | M3 |
 | Tiri analizzati | — | M3 |
 | Peso di `data/processed/` | — | M3 |
 | Brier score, modello base | — | M5 |
