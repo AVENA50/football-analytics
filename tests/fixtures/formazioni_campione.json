@@ -1,0 +1,139 @@
+[
+  {
+    "team_id": 1,
+    "team_name": "Casalinga",
+    "lineup": [
+      {
+        "player_id": 100,
+        "player_name": "Attaccante Uno",
+        "player_nickname": null,
+        "jersey_number": 9,
+        "positions": [
+          {
+            "position_id": 23,
+            "position": "Center Forward",
+            "from": "00:00",
+            "to": null,
+            "from_period": 1,
+            "to_period": null,
+            "start_reason": "Starting XI",
+            "end_reason": "Final Whistle"
+          }
+        ]
+      },
+      {
+        "player_id": 103,
+        "player_name": "Regista",
+        "player_nickname": null,
+        "jersey_number": 8,
+        "positions": [
+          {
+            "position_id": 13,
+            "position": "Right Center Midfield",
+            "from": "00:00",
+            "to": "60:00",
+            "from_period": 1,
+            "to_period": 2,
+            "start_reason": "Starting XI",
+            "end_reason": "Substitution - Off (Tactical)"
+          }
+        ]
+      },
+      {
+        "player_id": 102,
+        "player_name": "Rigorista Uno",
+        "player_nickname": null,
+        "jersey_number": 11,
+        "positions": [
+          {
+            "position_id": 21,
+            "position": "Left Wing",
+            "from": "90:00",
+            "to": "60:00",
+            "from_period": 4,
+            "to_period": 2,
+            "start_reason": "Tactical Shift",
+            "end_reason": "Substitution - On (Tactical)"
+          },
+          {
+            "position_id": 23,
+            "position": "Center Forward",
+            "from": "60:00",
+            "to": null,
+            "from_period": 2,
+            "to_period": null,
+            "start_reason": "Substitution - On (Tactical)",
+            "end_reason": "Final Whistle"
+          }
+        ]
+      },
+      {
+        "player_id": 104,
+        "player_name": "Panchinaro",
+        "player_nickname": null,
+        "jersey_number": 20,
+        "positions": []
+      }
+    ]
+  },
+  {
+    "team_id": 2,
+    "team_name": "Ospite",
+    "lineup": [
+      {
+        "player_id": 200,
+        "player_name": "Ospite Uno",
+        "player_nickname": null,
+        "jersey_number": 10,
+        "positions": [
+          {
+            "position_id": 24,
+            "position": "Left Center Forward",
+            "from": "00:00",
+            "to": null,
+            "from_period": 1,
+            "to_period": null,
+            "start_reason": "Starting XI",
+            "end_reason": "Final Whistle"
+          }
+        ]
+      },
+      {
+        "player_id": 201,
+        "player_name": "Ospite Due",
+        "player_nickname": null,
+        "jersey_number": 19,
+        "positions": [
+          {
+            "position_id": 23,
+            "position": "Center Forward",
+            "from": "105:00",
+            "to": null,
+            "from_period": 4,
+            "to_period": null,
+            "start_reason": "Substitution - On (Tactical)",
+            "end_reason": "Final Whistle"
+          }
+        ]
+      },
+      {
+        "player_id": 202,
+        "player_name": "Rigorista Due",
+        "player_nickname": null,
+        "jersey_number": 7,
+        "positions": [
+          {
+            "position_id": 17,
+            "position": "Right Wing",
+            "from": "00:00",
+            "to": null,
+            "from_period": 1,
+            "to_period": null,
+            "start_reason": "Starting XI",
+            "end_reason": "Final Whistle"
+          }
+        ]
+      }
+    ]
+  }
+]
