@@ -28,6 +28,8 @@ classifiers = [
 # pipeline darebbe numeri diversi senza che nulla nel repository sia cambiato.
 dependencies = [
   "statsbombpy==1.22.0",
+  "requests==2.34.2",
+  "urllib3==2.7.0",
   "pandas==3.0.5",
   "pyarrow==24.0.0",
   "numpy==2.5.1",
