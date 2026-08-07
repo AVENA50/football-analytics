@@ -91,6 +91,64 @@ pulito; il rimedio vive sul computer che ha il problema.
 
 ---
 
+## M2 — Ingestione
+
+### 2026-08-07 · M2-T1 · il piano si sbagliava su meta' delle competizioni
+
+**Cosa:** il test di rete di M2-T1 e' fallito su due competizioni su quattro.
+Ligue 1 2021/22: attese 380 partite, trovate **26**. Bundesliga 2023/24:
+attese 306, trovate **34**. Serie A 2015/16 e finali di Champions tornavano.
+
+**Come si e' capito:** 26 e 34 non sono numeri casuali. 34 e' una stagione
+intera di Bundesliga **per una squadra sola**; 26 sono le presenze di un
+giocatore in un campionato. StatsBomb non pubblica sempre stagioni complete:
+a volte rilascia il sottoinsieme legato a un tema — la biografia di Messi, la
+stagione imbattuta del Leverkusen.
+
+**Perche' era grave:** quelle due erano le uniche fonti di dati 360 del piano.
+Insieme dovevano dare 686 partite e ne danno 60. L'intero confronto fra
+modello base e modello 360 — la parte piu' raccontabile del progetto — si
+sarebbe addestrato su un decimo dei dati previsti, e i 27.000 tiri stimati
+sarebbero stati circa 1.500.
+
+**Risolto:** scritto `scripts/esplora_open_data.py`, che conta le partite di
+ogni stagione dell'Open Data e ne riporta la disponibilita' dei freeze frame.
+Da li' e' emerso il quadro reale e le fonti sono state riscelte.
+
+**Cosa insegna:** il piano si basava su numeri plausibili — 380 partite sono
+un campionato a venti squadre, 306 uno a diciotto — ma nessuno li aveva
+verificati. Un numero che *sembra* giusto e' il tipo peggiore di errore,
+perche' non attira controlli. Il task che li ha verificati esisteva apposta, ed
+e' l'unico motivo per cui il problema e' emerso al secondo task di M2 invece
+che a M5.
+
+### 2026-08-07 · M2-T1 · `bool(NaN)` vale True
+
+**Cosa:** la prima versione di `esplora_open_data.py` dichiarava i dati 360
+disponibili per tutte e quaranta le stagioni, comprese quelle che il piano
+sapeva non averli.
+
+**Come si e' capito:** il risultato era troppo bello. Se *tutto* ha i 360, la
+domanda centrale del progetto non ha senso — e un controllo che risponde
+sempre si' non e' un controllo.
+
+**La causa:**
+
+```python
+ha_360 = bool(voce.get("match_available_360"))  # sbagliato
+```
+
+Quando il campo manca, pandas restituisce `NaN`. E `bool(NaN)` in Python vale
+`True`, perche' NaN e' un float diverso da zero. La correzione e'
+`bool(pd.notna(...))`.
+
+**Cosa insegna:** con pandas, il valore mancante non e' `None` e non e' falso.
+Ogni controllo di verita' su una cella che puo' essere vuota va scritto con
+`pd.notna` o `pd.isna`, mai con `if valore:`. Vale per tutto M3, dove i campi
+opzionali degli eventi StatsBomb sono la norma.
+
+---
+
 <!--
 Le milestone successive aggiungono qui la loro sezione.
 Almeno un'annotazione per milestone: e' il criterio di M7-T6.

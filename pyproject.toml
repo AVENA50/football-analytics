@@ -143,6 +143,11 @@ addopts = [
 markers = [
   "rete: test che richiedono una connessione (esclusi in CI con -m 'not rete')",
 ]
+filterwarnings = [
+  # statsbombpy avvisa a ogni chiamata che non usiamo credenziali a pagamento.
+  # E' l'uso previsto dell'Open Data, non un problema da segnalare ogni volta.
+  "ignore::statsbombpy.api_client.NoAuthWarning",
+]
 
 [tool.coverage.run]
 branch = true
