@@ -3,19 +3,29 @@
 > I Parquet esistono, sono corretti e sono piccoli. E i tiri portano con sé
 > una colonna che il piano non sapeva di poter avere.
 
-**Periodo:** dal 2026-08-07 al \_\_ · **Issue chiuse:** \_\_ / 8 · **Commit:** \_\_
-
-> Questo file viene compilato **mentre** la milestone procede. Le sezioni con
-> `__` sono ancora aperte.
+**Periodo:** 2026-08-07, in giornata · **Issue chiuse:** 8 / 8 · **Commit:** 5
 
 ---
 
 ## 1. Cosa è stato costruito
 
-<!-- Da completare a fine milestone. -->
+Il magazzino. Cinque tabelle Parquet che pesano **2,87 MB** in tutto e
+contengono ciò che serve alle nove viste: 43.849 tiri, 1.753 partite, 4.810
+righe di statistiche giocatore, 72.889 archi della rete dei passaggi e 698.395
+celle di densità.
 
-Finora: `shots.parquet`, una riga per tiro, con la verifica del risultato che
-interrompe la costruzione se i gol calcolati non coincidono con il tabellino.
+Il rapporto che riassume la milestone è questo: **6,25 GB di JSON grezzo
+diventano 2,87 MB**, cioè un fattore 2.200. Non per compressione — per
+selezione. Sei milioni di eventi contenevano l'informazione di 43.849 tiri e di
+alcune migliaia di aggregati; il resto era struttura di supporto che nessuna
+vista guarda.
+
+Ma il pezzo che conta più delle dimensioni è un altro: **la costruzione si
+interrompe se i numeri non tornano**. Su 1.753 partite, ogni risultato
+calcolato dagli eventi viene confrontato con il tabellino ufficiale, e i gol
+attribuiti ai giocatori con quelli delle partite. Non è una formalità: durante
+questa milestone quel controllo ha trovato un gol del Marsiglia che il codice
+perdeva, e l'ha trovato mesi prima che qualcuno aprisse una dashboard.
 
 ## 2. File creati e modificati
 
@@ -154,29 +164,126 @@ Interessante come sottoprodotto: Schick ha segnato 5 gol con 2,26 di xG, cioè
 **+2,74** rispetto all'atteso. È il genere di osservazione che alimenterà i
 riquadri insight di M6.
 
-### Riepilogo
+### Il magazzino completo (M3-T7)
+
+Su tutte e 1.753 le partite.
+
+| Tabella | Righe | Colonne | Peso |
+| --- | ---: | ---: | ---: |
+| `shots.parquet` | 43.849 | 34 | 1,65 MB |
+| `touches.parquet` | 698.395 | 8 | 0,79 MB |
+| `player_stats.parquet` | 4.810 | 19 | 0,23 MB |
+| `passes.parquet` | 72.889 | 7 | 0,16 MB |
+| `matches.parquet` | 1.753 | 22 | 0,05 MB |
+| **Totale** | | | **2,87 MB** |
+
+| Limite | Valore | Reale | Margine |
+| --- | ---: | ---: | ---: |
+| Per file (GitHub avverte) | 50 MB | 1,65 MB | 30× |
+| Totale del magazzino | 100 MB | 2,87 MB | 35× |
+| `passes` + `touches` (M3-T3) | 40 MB | **0,95 MB** | 42× |
+
+**6,25 GB di JSON grezzo diventano 2,87 MB**, un fattore 2.200. Non per
+compressione: per selezione.
+
+### I contenuti
 
 | Cosa | Valore |
-| --- | --- |
-| Colonne di `shots.parquet` | 34 |
-| Colonne di `matches.parquet` | 22 |
-| Colonne di `player_stats.parquet` | 17 |
-| Partite trasformate | 57 |
-| Righe in `player_stats` | 614 |
-| Giocatori mai entrati, esclusi | 849 |
+| --- | ---: |
+| Tiri | 43.849 |
+| Gol | 4.578 |
+| Tiri con `shot.freeze_frame` | 43.264 — **99 %** |
+| Rigori finali, marcati ed esclusi dagli aggregati | 190 |
+| Giocatori | 4.810, di cui 1.773 sopra i 500 minuti |
 | Spezzoni con `to` precedente a `from` | 30 su 2.320 — 1,3 % |
-| Test di `transform.py` | 41, nessuno con rete |
-| Copertura di `transform.py` | 93 % |
-| Peso di `shots.parquet` | \_\_ |
-| Tiri sul dataset completo | \_\_ |
+| Squadre con due nomi negli eventi | 2 su 152 |
+| Test | 131, nessuno con rete |
+| Copertura di `transform.py` | 91 % |
+
+Per gruppo:
+
+| Gruppo | Tiri | Gol | xG StatsBomb |
+| --- | ---: | ---: | ---: |
+| Campionati 2015/16 | 37.888 | 3.869 | 3.746,8 |
+| Tornei per nazionali | 5.367 | 635 | 656,2 |
+| Finali di Champions | 594 | 74 | 73,5 |
+
+### La verifica contro il mondo esterno
+
+Le classifiche marcatori calcolate dal magazzino, confrontate con i fatti:
+
+| Giocatore | Competizione | Calcolati | Ufficiali |
+| --- | --- | ---: | ---: |
+| Luis Suárez | La Liga 2015/16 | 40 | 40 — Pichichi |
+| Gonzalo Higuaín | Serie A 2015/16 | 36 | 36 — record di Serie A |
+| Cristiano Ronaldo | La Liga 2015/16 | 35 | 35 |
+| Lionel Messi | La Liga 2015/16 | 26 | 26 |
+| Zlatan Ibrahimović | Ligue 1 2015/16 | 36 | **38** |
+| Cristiano Ronaldo | Euro 2020 | 5 | 5 — Scarpa d'Oro |
+| Patrik Schick | Euro 2020 | 5 | 5 — Scarpa d'Oro |
+
+**Lo scarto di Ibrahimović non è un difetto della pipeline, ed è spiegabile
+esattamente.** Alla Ligue 1 2015/16 mancano 3 partite su 380 — le giornate 14,
+23 e 36 ne hanno nove invece di dieci — e il Paris Saint-Germain è fra le sei
+squadre a cui ne manca una. I due gol assenti sono in quella partita che
+l'Open Data non pubblica.
+
+Vale la pena dirlo così com'è: sapere **quale** partita manca è ciò che
+distingue un dato incompleto da un dato sbagliato.
+
+### Scelta: `passes` e `touches` non contengono passaggi e tocchi
+
+**Alternativa scartata:** una riga per passaggio e una per tocco, come suggerisce il nome delle tabelle nel piano.
+
+**Perché:** sarebbero 1,68 milioni e 6,12 milioni di righe, e — cosa che conta di più — **nessuna vista ne ha bisogno**. La rete dei passaggi mostra le posizioni medie e le linee fra i giocatori, spesse in proporzione ai passaggi scambiati: non le serve sapere che al 34' Acquafresca ha passato a Brienza da `[61.0, 40.1]`, le serve sapere che in stagione se lo sono scambiati 214 volte. La heatmap è, per definizione, una densità su griglia.
+
+Salvare il dato grezzo per poi aggregarlo a ogni caricamento significa far fare a Streamlit Cloud, dentro un gigabyte di RAM, un lavoro che va fatto una volta sola qui.
+
+Risultato: 72.889 archi invece di 1,68 milioni di passaggi, 698.395 celle invece di 6,12 milioni di tocchi. **0,95 MB contro un limite di 40.**
+
+Le posizioni medie — i nodi della rete — stanno in `player_stats.parquet`, che ha già la grana giusta. E non vengono dalla griglia ma dalle coordinate esatte: approssimare un nodo al centro di una cella sposterebbe un giocatore fino a 2,5 metri per nessun guadagno.
+
+### Scelta: `Pressure` non è un tocco
+
+**Alternativa scartata:** contare come tocco ogni evento con una posizione e un giocatore.
+
+**Perché:** la pressione è un'azione **senza** palla, registrata alla posizione di chi pressa. Sono 310 eventi a partita, il 9 % del totale, e includerli riempirebbe la heatmap di un mediano di zone in cui non ha mai toccato il pallone. La heatmap risponde alla domanda «dove ha giocato», non «dove è stato».
+
+### Scelta: l'identità di una squadra è il suo identificativo
+
+**Alternativa scartata:** confrontare per nome, che è leggibile e sembra funzionare.
+
+**Perché:** non funziona. Due squadre su 152 compaiono negli eventi con un nome diverso da quello del file partite — «Marseille» contro «Olympique de Marseille», «Caen» contro «Stade Malherbe Caen» — e il confronto per nome faceva risultare a zero i loro gol. È lo stesso principio già applicato ai giocatori poche ore prima, e non applicato alle squadre: vedi la sezione 5.
 
 ## 5. Problemi incontrati
 
-Il racconto a caldo è in [`NOTES.md`](../../NOTES.md). I due episodi di questa
-milestone: la scoperta che `shot.freeze_frame` è presente ovunque — che ha
-allargato il modello da 5.500 a 44.000 tiri — e una fixture in cui avevo
-dichiarato il risultato sbagliato, smascherata dal test scritto per verificare
-proprio i risultati.
+Il racconto a caldo è in [`NOTES.md`](../../NOTES.md). Quattro episodi, e i due
+più istruttivi riguardano i controlli stessi.
+
+**`shot.freeze_frame` era ovunque.** L'architettura si reggeva sull'idea che
+solo alcune competizioni permettessero il modello con le variabili spaziali. È
+presente nel **99 %** dei 43.849 tiri, campionati del 2015/16 compresi. Il
+confronto fra i due modelli passa da ~5.500 a ~44.000 tiri.
+
+**Una fixture in cui avevo dichiarato il risultato sbagliato**, smascherata dal
+test scritto per verificare proprio i risultati. E un test che guastava una
+tabella scrivendoci il valore che aveva già, quindi non verificava nulla.
+
+**Il gol del Marsiglia**, perso perché confrontavo le squadre per nome. È lo
+stesso errore dei giocatori sdoppiati di poche ore prima, con un'altra
+maschera: avevo imparato la regola su un caso e non l'avevo cercata altrove.
+
+**Due tiri a 20 centimetri oltre la linea di porta**, e qui il controllo aveva
+torto: rumore di misura del tracciamento, non dati sbagliati. Corretto il
+controllo, non i dati.
+
+Gli ultimi due casi insieme sono la lezione della milestone: **un controllo che
+si allarma va prima capito, non subito obbedito né subito allentato.** Con il
+Marsiglia aveva ragione e ho corretto il codice; con i due tiri aveva torto e
+ho corretto il controllo. Sbagliare la distinzione nella prima direzione
+lascia passare dati falsi; nella seconda produce falsi allarmi, e un controllo
+che dà falsi allarmi viene disattivato — e da quel momento non trova più
+nemmeno i problemi veri.
 
 ## 6. Cosa resta aperto
 
@@ -189,22 +296,28 @@ proprio i risultati.
   serve a M5 per calcolare i difensori nel cono di tiro. Sarà una tabella a
   parte, una riga per giocatore inquadrato — una deviazione consapevole dalle
   cinque tabelle previste dal piano, che non poteva prevederla.
-- **Il peso di `passes` e `touches` è il rischio principale di M3.** Con 1.517
-  partite di campionato, salvare ogni passaggio supererebbe i limiti: andranno
-  pre-aggregati a monte.
-- **La verifica copre i gol, non ancora i tiri.** Il criterio di M3-T1 nomina
+- **La rete dei passaggi è a livello di competizione, non di partita.** Le nove
+  viste non chiedono la rete di una singola partita, ma è una porta che si
+  chiude: riaprirla significa passare a 350.000 archi invece di 73.000, ancora
+  ampiamente gestibili.
+- **La verifica copre i gol, non i tiri.** Il criterio di M3-T1 nomina
   entrambi; i conteggi dei tiri non hanno una fonte ufficiale con cui
   confrontarsi nell'Open Data.
+- **Alla Ligue 1 2015/16 mancano 3 partite su 380.** È un limite della fonte,
+  non della pipeline, ma va dichiarato nella vista Metodologia: i totali di
+  quel campionato sono leggermente inferiori a quelli ufficiali.
 
 ## 7. Come verificarlo
 
 ```bash
-uv run pytest -m "not rete" tests/test_transform.py
-
-uv run python -c "from football_analytics import transform, config; \
-  df = transform.costruisci_tiri(config.COMPETIZIONI); print(df.shape)"
+uv run pytest -m "not rete"
+uv run python scripts/build_dataset.py
 ```
 
-Il secondo comando ricostruisce la tabella dalle partite presenti su disco con
-la verifica attiva: se una sola partita avesse il risultato incoerente, si
-fermerebbe indicando quale.
+Il secondo comando ricostruisce l'intero magazzino con tutti i controlli
+attivi. Se una sola partita fra 1.753 avesse il risultato incoerente, o un
+tiro finisse fuori dal campo oltre la tolleranza, si fermerebbe indicando quale
+— **senza scrivere niente**.
+
+Rilanciarlo produce file identici: le righe delle tabelle aggregate escono
+ordinate per chiave proprio per questo.

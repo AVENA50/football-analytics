@@ -343,6 +343,96 @@ piano invece di contare le partite. Un campo aggregato invece di scorrere le
 righe. Una cella che sembra falsa invece di chiedere a `pd.notna`. La fonte
 giusta costava sempre un passo in piu', e quel passo e' esattamente il lavoro.
 
+### 2026-08-07 · M3-T3 · lo stesso errore due volte, con un'altra maschera
+
+**Cosa:** la costruzione del magazzino su 1.753 partite si e' fermata su
+Lorient-Marsiglia: risultato calcolato 1-0, ufficiale 1-1.
+
+**Come si e' capito:** guardando gli eventi. Il gol c'era, al 45' del secondo
+tempo. Ma:
+
+```
+evento:    team = "Marseille"
+metadati:  ospite = "Olympique de Marseille"
+```
+
+Lo stesso club con due nomi. Contavo i gol per **nome squadra**, e il nome
+negli eventi non e' quello nel file delle partite: il Marsiglia risultava a
+zero. Succede a due squadre su 152, Marsiglia e Caen, entrambe di Ligue 1.
+
+**Risolto:** confronto per identificativo, e i nomi presi sempre dal file
+partite cosi' che il magazzino ne abbia una grafia sola. Aggiunta
+`nome_squadra(meta, id)`, che e' l'unico punto in cui un identificativo diventa
+un nome.
+
+**Cosa insegna, e questa e' la parte che conta:** e' **lo stesso errore** dei
+giocatori sdoppiati di poche ore prima — «Danny Ward» e «Daniel Ward» — con
+un'altra maschera. Li' avevo scritto nel commit *«l'identita' e'
+l'identificativo, il nome e' un attributo»*, l'avevo applicato ai giocatori, e
+non mi era venuto in mente di applicarlo alle squadre.
+
+Imparare una lezione su un caso non basta: va cercato **dove altro vale lo
+stesso principio**. Ogni volta che una chiave e' una stringa leggibile invece
+di un identificativo, il difetto e' gia' li' e aspetta solo il dato giusto per
+manifestarsi. Nel magazzino restano da controllare le competizioni, che pero'
+usano una chiave scelta da noi e non da StatsBomb.
+
+**Nota di merito al controllo:** questo non l'ha trovato una lettura del
+codice. L'ha trovato `verifica_risultato`, su una partita fra 1.753, mesi prima
+che qualcuno guardasse una dashboard.
+
+### 2026-08-07 · M3-T4 · due tiri fuori dal campo, e non era un errore
+
+**Cosa:** sul dataset completo il controllo delle coordinate ha segnalato due
+tiri con `x` oltre la linea di porta: 120,2 e 120,1 su un campo lungo 120.
+
+**Come si e' capito:** guardandoli. Entrambi hanno `y` vicino a 1, cioe' sono
+calciati dalla linea di fondo all'altezza della bandierina, ed entrambi hanno
+l'xG **minimo** possibile, 0,00018. Un pallone calciato sulla linea puo' avere
+il centro qualche centimetro oltre: e' rumore di misura del tracciamento, non
+un dato sbagliato.
+
+**Risolto:** una tolleranza esplicita di un metro, con il perche' scritto
+accanto alla costante.
+
+**Cosa insegna:** il primo istinto e' stato «il controllo ha trovato qualcosa,
+quindi i dati sono sbagliati». Ma un controllo puo' essere **troppo severo**, e
+quello e' un difetto peggiore di uno troppo permissivo: un controllo che
+segnala falsi allarmi viene disattivato, e da quel momento non trova piu'
+nemmeno i problemi veri. Due tiri su 44.000 non giustificano di bloccare la
+pipeline; una tolleranza documentata si'.
+
+La differenza fra questo caso e quello del Marsiglia e' tutta qui: li' il
+controllo aveva ragione e ho corretto il codice, qui aveva torto e ho corretto
+il controllo. Distinguere i due casi e' il lavoro — allentare sempre e'
+comodo, irrigidire sempre e' inutile.
+
+### 2026-08-07 · M3 · la verifica esterna che vale piu' di tutte le altre
+
+**Cosa:** le classifiche marcatori calcolate dal magazzino, confrontate con i
+fatti pubblici:
+
+| Giocatore | Competizione | Calcolati | Ufficiali |
+| --- | --- | ---: | ---: |
+| Luis Suarez | La Liga 2015/16 | 40 | 40 (Pichichi) |
+| Gonzalo Higuain | Serie A 2015/16 | 36 | 36 (record) |
+| Cristiano Ronaldo | La Liga 2015/16 | 35 | 35 |
+| Lionel Messi | La Liga 2015/16 | 26 | 26 |
+| Zlatan Ibrahimovic | Ligue 1 2015/16 | 36 | **38** |
+
+**Lo scarto e' la parte interessante.** Non e' un difetto della pipeline: alla
+Ligue 1 2015/16 mancano 3 partite su 380 — le giornate 14, 23 e 36 ne hanno
+nove invece di dieci — e il PSG e' fra le sei squadre a cui ne manca una.
+
+**Cosa insegna:** sapere **quale** partita manca e' cio' che separa un dato
+incompleto da un dato sbagliato. Un totale che non torna, da solo, e' inutile;
+un totale che non torna **e di cui si conosce la ragione esatta** e' una
+dichiarazione onesta che si puo' mettere in una pagina Metodologia.
+
+Ed e' la ragione per cui vale la pena cercare una verifica esterna per ogni
+tabella prodotta: quella interna dice che i numeri sono coerenti fra loro, non
+che sono veri.
+
 ---
 
 <!--

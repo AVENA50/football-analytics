@@ -45,6 +45,8 @@ FIXTURES = Path(__file__).parent / "fixtures"
 META: dict[str, Any] = {
     "casa": "Casalinga",
     "ospite": "Ospite",
+    "casa_id": 1,
+    "ospite_id": 2,
     "gol_casa": 2,
     "gol_ospite": 1,
     "ha_360": True,
@@ -69,18 +71,18 @@ def eventi() -> list[dict[str, Any]]:
 
 
 def test_il_risultato_calcolato_e_quello_ufficiale(eventi: list[dict[str, Any]]) -> None:
-    assert transform.gol_per_squadra(eventi) == {"Casalinga": 2, "Ospite": 1}
+    assert transform.gol_per_squadra(eventi, META) == {"Casalinga": 2, "Ospite": 1}
 
 
 def test_ignorare_l_autogol_darebbe_uno_a_uno(eventi: list[dict[str, Any]]) -> None:
     solo_tiri = [e for e in eventi if e["type"]["name"] == "Shot"]
-    assert transform.gol_per_squadra(solo_tiri) == {"Casalinga": 1, "Ospite": 1}
+    assert transform.gol_per_squadra(solo_tiri, META) == {"Casalinga": 1, "Ospite": 1}
 
 
 def test_i_rigori_finali_non_contano(eventi: list[dict[str, Any]]) -> None:
     # Senza l'esclusione del periodo 5, la Casalinga risulterebbe a 3.
     senza_rigori = [e for e in eventi if e["period"] != transform.PERIODO_RIGORI]
-    assert transform.gol_per_squadra(senza_rigori) == transform.gol_per_squadra(eventi)
+    assert transform.gol_per_squadra(senza_rigori, META) == transform.gol_per_squadra(eventi, META)
 
 
 def test_l_autogol_conta_una_volta_sola(eventi: list[dict[str, Any]]) -> None:
@@ -89,16 +91,16 @@ def test_l_autogol_conta_una_volta_sola(eventi: list[dict[str, Any]]) -> None:
     tipi = [e["type"]["name"] for e in eventi]
     assert tipi.count("Own Goal For") == 1
     assert tipi.count("Own Goal Against") == 1
-    assert transform.gol_per_squadra(eventi)["Casalinga"] == 2
+    assert transform.gol_per_squadra(eventi, META)["Casalinga"] == 2
 
 
 def test_l_autogol_va_alla_squadra_che_ne_beneficia(eventi: list[dict[str, Any]]) -> None:
     solo_autogol = [e for e in eventi if "Own Goal" in e["type"]["name"]]
-    assert transform.gol_per_squadra(solo_autogol) == {"Casalinga": 1}
+    assert transform.gol_per_squadra(solo_autogol, META) == {"Casalinga": 1}
 
 
 def test_verifica_risultato_passa_quando_torna(eventi: list[dict[str, Any]]) -> None:
-    transform.verifica_risultato(1, transform.gol_per_squadra(eventi), META)
+    transform.verifica_risultato(1, transform.gol_per_squadra(eventi, META), META)
 
 
 def test_verifica_risultato_si_ferma_quando_non_torna() -> None:
@@ -219,8 +221,8 @@ def prepara_partita(radice: Path, match_id: int, gol_casa: int, gol_ospite: int)
     partite = [
         {
             "match_id": match_id,
-            "home_team": {"home_team_name": "Casalinga"},
-            "away_team": {"away_team_name": "Ospite"},
+            "home_team": {"home_team_id": 1, "home_team_name": "Casalinga"},
+            "away_team": {"away_team_id": 2, "away_team_name": "Ospite"},
             "home_score": gol_casa,
             "away_score": gol_ospite,
             "match_status_360": "available",

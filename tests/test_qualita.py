@@ -50,10 +50,10 @@ def test_le_tabelle_coerenti_passano_i_controlli(tabelle: dict[str, pd.DataFrame
     transform.controlla(tabelle)
 
 
-def test_costruisci_tabelle_restituisce_le_tre_tabelle(
+def test_costruisci_tabelle_restituisce_le_cinque_tabelle(
     tabelle: dict[str, pd.DataFrame],
 ) -> None:
-    assert set(tabelle) == {"shots", "matches", "player_stats"}
+    assert set(tabelle) == {"shots", "matches", "player_stats", "passes", "touches"}
     assert len(tabelle["shots"]) == 5
     assert len(tabelle["matches"]) == 1
     assert len(tabelle["player_stats"]) == 6
@@ -98,6 +98,15 @@ def test_un_tiro_fuori_dal_campo_viene_segnalato(tabelle: dict[str, pd.DataFrame
     guasta(tabelle, "shots", "x", 999.0)
     with pytest.raises(QualitaError, match="fuori dal campo"):
         transform.controlla(tabelle)
+
+
+def test_un_tiro_appena_oltre_la_linea_e_tollerato(tabelle: dict[str, pd.DataFrame]) -> None:
+    # Su 44.000 tiri ce ne sono due a x = 120,1 e 120,2, calciati dalla linea
+    # di fondo: il centro del pallone sporge di qualche centimetro. E' rumore
+    # di misura, e un controllo che lo segnala verrebbe disattivato al primo
+    # falso allarme.
+    guasta(tabelle, "shots", "x", transform.LUNGHEZZA_CAMPO + 0.2)
+    transform.controlla(tabelle)
 
 
 def test_un_xg_impossibile_viene_segnalato(tabelle: dict[str, pd.DataFrame]) -> None:

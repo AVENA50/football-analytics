@@ -22,7 +22,7 @@ e non ``has_360``: descrive quello che contiene davvero.
 from __future__ import annotations
 
 import collections
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, Final, NamedTuple
 
 import pandas as pd
 
@@ -53,10 +53,54 @@ ULTIMO_PERIODO_DI_GIOCO: Final[int] = 4
 LUNGHEZZA_CAMPO: Final[float] = 120.0
 LARGHEZZA_CAMPO: Final[float] = 80.0
 
+#: Quanto una coordinata puo' sporgere dal campo senza essere un errore.
+#:
+#: Su 44.000 tiri ce ne sono due a ``x = 120,1`` e ``120,2`` con ``y`` vicino a
+#: 1: calciati dalla linea di fondo all'altezza della bandierina, dove il centro
+#: del pallone puo' trovarsi qualche centimetro oltre la linea. Entrambi hanno
+#: l'xG minimo, il che conferma la lettura. E' rumore di misura, non un dato
+#: sbagliato: un controllo che pretende una precisione che il tracciamento non
+#: ha e' un controllo che verra' disattivato al primo falso allarme.
+TOLLERANZA_CAMPO: Final[float] = 1.0
+
 #: Durata plausibile di una partita, in minuti. Sotto gli 80 significa che
 #: manca un tempo, sopra i 135 che si sta contando qualcosa che non e' gioco.
 DURATA_MINIMA: Final[int] = 80
 DURATA_MASSIMA: Final[int] = 135
+
+#: Griglia della heatmap: celle da 5x5 metri su un campo 120x80.
+#:
+#: Non e' una scelta di compressione ma di senso: una heatmap **e'** una
+#: densita' su griglia. Salvare sei milioni di tocchi per poi contarli in celle
+#: a ogni caricamento significa far fare a Streamlit, dentro un gigabyte di
+#: RAM, un lavoro che va fatto una volta sola qui.
+CELLE_X: Final[int] = 24
+CELLE_Y: Final[int] = 16
+
+#: Gli eventi in cui un giocatore tocca il pallone.
+#:
+#: `Pressure` resta fuori di proposito: e' un'azione **senza** palla, registrata
+#: alla posizione di chi pressa. Includerla gonfierebbe la heatmap di un
+#: centrocampista difensivo con posizioni in cui non ha mai avuto il pallone.
+TIPI_TOCCO: Final[frozenset[str]] = frozenset(
+    {
+        "Pass",
+        "Ball Receipt*",
+        "Carry",
+        "Shot",
+        "Dribble",
+        "Clearance",
+        "Interception",
+        "Ball Recovery",
+        "Duel",
+        "Block",
+        "Miscontrol",
+        "Dispossessed",
+        "Goal Keeper",
+        "Shield",
+        "50/50",
+    }
+)
 
 #: Tipo di dato di ogni colonna di ``shots.parquet``.
 #:
@@ -144,7 +188,57 @@ TIPI_GIOCATORI: Final[dict[str, str]] = {
     "tiri_90": "float32",
     "gol_90": "float32",
     "xg_90": "float32",
+    "x_media": "float32",
+    "y_media": "float32",
     "sopra_soglia": "bool",
+}
+
+#: L'ordine delle componenti della chiave di ``passes.parquet``.
+CHIAVE_PASSAGGI: Final[tuple[str, ...]] = (
+    "competizione",
+    "gruppo",
+    "stagione",
+    "squadra",
+    "passatore_id",
+    "ricevitore_id",
+)
+
+#: L'ordine delle componenti della chiave di ``touches.parquet``.
+CHIAVE_TOCCHI: Final[tuple[str, ...]] = (
+    "competizione",
+    "gruppo",
+    "stagione",
+    "giocatore_id",
+    "squadra",
+    "cella_x",
+    "cella_y",
+)
+
+#: Tipo di dato di ogni colonna di ``passes.parquet``.
+#:
+#: Sono gli **archi** della rete dei passaggi, non i passaggi. I nodi — le
+#: posizioni medie dei giocatori — stanno in ``player_stats.parquet``, che ha
+#: gia' la grana giusta.
+TIPI_PASSAGGI: Final[dict[str, str]] = {
+    "competizione": "category",
+    "gruppo": "category",
+    "stagione": "category",
+    "squadra": "category",
+    "passatore_id": "int32",
+    "ricevitore_id": "int32",
+    "passaggi": "int32",
+}
+
+#: Tipo di dato di ogni colonna di ``touches.parquet``.
+TIPI_TOCCHI: Final[dict[str, str]] = {
+    "competizione": "category",
+    "gruppo": "category",
+    "stagione": "category",
+    "giocatore_id": "int32",
+    "squadra": "category",
+    "cella_x": "int8",
+    "cella_y": "int8",
+    "tocchi": "int32",
 }
 
 
@@ -172,6 +266,46 @@ def _nome(blocco: Any, chiave: str = "name") -> str:
     return ""
 
 
+def _valore(blocco: Any, chiave: str, predefinito: int = 0) -> int:
+    """Estrae un numero da un blocco annidato di StatsBomb.
+
+    Args:
+        blocco: Il dizionario, che puo' mancare.
+        chiave: La chiave da leggere.
+        predefinito: Valore da usare se la chiave non c'e'.
+
+    Returns:
+        Il numero, oppure il predefinito.
+    """
+    if isinstance(blocco, dict):
+        return int(blocco.get(chiave, predefinito))
+    return predefinito
+
+
+def nome_squadra(meta: dict[str, Any], squadra_id: int) -> str:
+    """Restituisce il nome canonico di una squadra della partita.
+
+    Il nome viene dal file delle partite, non dall'evento: e' l'unico modo per
+    avere una grafia sola in tutto il magazzino. Due squadre di Ligue 1 —
+    Marsiglia e Caen — compaiono negli eventi con due nomi diversi, e senza
+    questa normalizzazione le tabelle avrebbero due righe per la stessa
+    squadra e i join della dashboard perderebbero meta' dei dati.
+
+    Args:
+        meta: I metadati della partita.
+        squadra_id: L'identificativo della squadra nell'evento.
+
+    Returns:
+        Il nome canonico, oppure stringa vuota se l'identificativo non
+        appartiene a nessuna delle due squadre della partita.
+    """
+    if squadra_id and squadra_id == meta.get("casa_id"):
+        return str(meta["casa"])
+    if squadra_id and squadra_id == meta.get("ospite_id"):
+        return str(meta["ospite"])
+    return ""
+
+
 def metadati_partite(comp: Competizione) -> dict[int, dict[str, Any]]:
     """Legge i dati di contesto delle partite di una competizione.
 
@@ -191,6 +325,12 @@ def metadati_partite(comp: Competizione) -> dict[int, dict[str, Any]]:
             metadati[int(voce["match_id"])] = {
                 "casa": _nome(voce.get("home_team"), "home_team_name"),
                 "ospite": _nome(voce.get("away_team"), "away_team_name"),
+                # L'identita' di una squadra e' il suo identificativo. Negli
+                # eventi il Marsiglia compare a volte come «Marseille» e a
+                # volte come «Olympique de Marseille», e il Caen lo stesso:
+                # confrontare per nome fa risultare a zero i loro gol.
+                "casa_id": int(_valore(voce.get("home_team"), "home_team_id")),
+                "ospite_id": int(_valore(voce.get("away_team"), "away_team_id")),
                 "gol_casa": int(voce["home_score"]),
                 "gol_ospite": int(voce["away_score"]),
                 "ha_360": voce.get("match_status_360") == ingest.STATO_360_DISPONIBILE,
@@ -240,8 +380,8 @@ def riga_tiro(
     tiro = evento.get("shot", {})
     posizione = evento.get("location") or [float("nan"), float("nan")]
     fotogramma = tiro.get("freeze_frame")
-    squadra = _nome(evento.get("team"))
-    in_casa = squadra == meta["casa"]
+    in_casa = _id(evento.get("team")) == meta["casa_id"]
+    squadra = meta["casa"] if in_casa else meta["ospite"]
 
     return {
         "shot_id": str(evento["id"]),
@@ -297,7 +437,7 @@ def _id(blocco: Any) -> int:
     return 0
 
 
-def gol_per_squadra(eventi: Sequence[dict[str, Any]]) -> dict[str, int]:
+def gol_per_squadra(eventi: Sequence[dict[str, Any]], meta: dict[str, Any]) -> dict[str, int]:
     """Conta i gol di una partita a partire dagli eventi.
 
     Due trappole, ed e' il motivo per cui questa funzione esiste separata:
@@ -310,14 +450,17 @@ def gol_per_squadra(eventi: Sequence[dict[str, Any]]) -> dict[str, int]:
 
     Args:
         eventi: Gli eventi grezzi della partita.
+        meta: I metadati, da cui si ricava il nome canonico delle squadre.
 
     Returns:
-        Quanti gol ha segnato ciascuna squadra.
+        Quanti gol ha segnato ciascuna squadra, con i nomi del file partite.
     """
     conteggio: collections.Counter[str] = collections.Counter()
     for evento in eventi:
         tipo = _nome(evento.get("type"))
-        squadra = _nome(evento.get("team"))
+        squadra = nome_squadra(meta, _id(evento.get("team")))
+        if not squadra:
+            continue
         if tipo == "Shot":
             e_gol = _nome(evento.get("shot", {}).get("outcome")) == ESITO_GOL
             if e_gol and int(evento["period"]) != PERIODO_RIGORI:
@@ -370,7 +513,7 @@ def tiri_di_partita(
     eventi: list[dict[str, Any]] = ingest.leggi_json(percorso)
 
     if verifica:
-        verifica_risultato(match_id, gol_per_squadra(eventi), meta)
+        verifica_risultato(match_id, gol_per_squadra(eventi, meta), meta)
 
     return [riga_tiro(e, comp, match_id, meta) for e in eventi if _nome(e.get("type")) == "Shot"]
 
@@ -483,8 +626,9 @@ def presenze_di_partita(
 
     righe: list[dict[str, Any]] = []
     for squadra in ingest.leggi_json(percorso):
-        nome_squadra = str(squadra.get("team_name", ""))
-        in_casa = nome_squadra == meta["casa"]
+        squadra_id = int(squadra.get("team_id", 0))
+        nome = nome_squadra(meta, squadra_id) or str(squadra.get("team_name", ""))
+        in_casa = squadra_id == meta.get("casa_id")
         for giocatore in squadra.get("lineup", []):
             spezzoni = giocatore.get("positions") or []
             if not spezzoni:
@@ -505,7 +649,7 @@ def presenze_di_partita(
                     "stagione": comp.stagione,
                     "giocatore_id": int(giocatore["player_id"]),
                     "giocatore": str(giocatore["player_name"]),
-                    "squadra": nome_squadra,
+                    "squadra": nome,
                     "in_casa": in_casa,
                     "ruolo": str(spezzoni[0].get("position", "")),
                     "minuti": minuti,
@@ -539,7 +683,7 @@ def _riga_partita(
 
     for evento in eventi:
         tipo = _nome(evento.get("type"))
-        squadra = _nome(evento.get("team"))
+        squadra = nome_squadra(meta, _id(evento.get("team")))
         if squadra not in aggregati:
             continue
 
@@ -609,7 +753,7 @@ def costruisci_partite_e_presenze(
                 continue
             eventi: list[dict[str, Any]] = ingest.leggi_json(percorso)
             if verifica:
-                verifica_risultato(match_id, gol_per_squadra(eventi), meta)
+                verifica_risultato(match_id, gol_per_squadra(eventi, meta), meta)
             righe_partite.append(_riga_partita(match_id, comp, meta, eventi))
             righe_presenze.extend(presenze_di_partita(match_id, comp, meta, durata_partita(eventi)))
 
@@ -645,7 +789,11 @@ def _prevalente(presenze: pd.DataFrame, chiave: list[str], attributo: str) -> pd
     return ordinati.drop_duplicates(subset=chiave)[[*chiave, attributo]]
 
 
-def costruisci_giocatori(tiri: pd.DataFrame, presenze: pd.DataFrame) -> pd.DataFrame:
+def costruisci_giocatori(
+    tiri: pd.DataFrame,
+    presenze: pd.DataFrame,
+    posizioni: dict[tuple[str, int, str], list[float]] | None = None,
+) -> pd.DataFrame:
     """Aggrega minuti e tiri in ``player_stats.parquet``.
 
     La chiave e' competizione + **identificativo** + squadra. Il nome resta
@@ -662,6 +810,9 @@ def costruisci_giocatori(tiri: pd.DataFrame, presenze: pd.DataFrame) -> pd.DataF
     Args:
         tiri: La tabella dei tiri.
         presenze: La tabella delle presenze.
+        posizioni: Somme delle coordinate e numero di tocchi per giocatore, da
+            cui si ricavano ``x_media`` e ``y_media``. Se assente, le posizioni
+            medie restano a zero.
 
     Returns:
         Una riga per giocatore, con i valori per 90 minuti gia' calcolati.
@@ -692,6 +843,19 @@ def costruisci_giocatori(tiri: pd.DataFrame, presenze: pd.DataFrame) -> pd.DataF
     for colonna in ("tiri", "gol", "xg"):
         unito[colonna] = unito[colonna].fillna(0)
 
+    # La posizione media e' il nodo della rete dei passaggi: la calcoliamo qui
+    # perche' questa tabella ha gia' la grana giusta, una riga per giocatore,
+    # competizione e squadra. Una tabella a parte direbbe la stessa cosa.
+    somme = posizioni or {}
+    medie = [
+        somme.get((c, int(g), s), [0.0, 0.0, 0.0])
+        for c, g, s in zip(
+            unito["competizione"], unito["giocatore_id"], unito["squadra"], strict=True
+        )
+    ]
+    unito["x_media"] = [m[0] / m[2] if m[2] else 0.0 for m in medie]
+    unito["y_media"] = [m[1] / m[2] if m[2] else 0.0 for m in medie]
+
     novanta = unito["minuti"].clip(lower=1) / 90.0
     unito["gol_meno_xg"] = unito["gol"] - unito["xg"]
     unito["tiri_90"] = unito["tiri"] / novanta
@@ -703,10 +867,86 @@ def costruisci_giocatori(tiri: pd.DataFrame, presenze: pd.DataFrame) -> pd.DataF
     return applica_tipi(righe, TIPI_GIOCATORI)
 
 
+def cella(x: float, y: float) -> tuple[int, int]:
+    """Converte una posizione in campo nelle coordinate della griglia.
+
+    Args:
+        x: Posizione lungo la lunghezza del campo, da 0 a 120.
+        y: Posizione lungo la larghezza, da 0 a 80.
+
+    Returns:
+        Gli indici di cella, gia' limitati ai bordi: un tiro sulla linea di
+        porta ha x esattamente 120 e finirebbe fuori griglia.
+    """
+    cx = min(int(x / LUNGHEZZA_CAMPO * CELLE_X), CELLE_X - 1)
+    cy = min(int(y / LARGHEZZA_CAMPO * CELLE_Y), CELLE_Y - 1)
+    return max(cx, 0), max(cy, 0)
+
+
+class Accumulatori(NamedTuple):
+    """Le strutture in cui si sommano gli aggregati durante la lettura.
+
+    Attributes:
+        passaggi: Conteggio per arco della rete dei passaggi.
+        tocchi: Conteggio per cella della griglia.
+        posizioni: Somma delle coordinate e numero di tocchi per giocatore,
+            da cui si ricava la posizione media esatta — non approssimata
+            dalla griglia.
+    """
+
+    passaggi: collections.Counter[tuple[str, str, str, str, int, int]]
+    tocchi: collections.Counter[tuple[str, str, str, int, str, int, int]]
+    posizioni: dict[tuple[str, int, str], list[float]]
+
+
+def accumula(
+    eventi: Iterable[dict[str, Any]],
+    comp: Competizione,
+    acc: Accumulatori,
+    meta: dict[str, Any],
+) -> None:
+    """Somma passaggi, tocchi e posizioni di una partita negli accumulatori.
+
+    Args:
+        eventi: Gli eventi grezzi della partita.
+        comp: La competizione a cui appartiene.
+        acc: Le strutture da aggiornare.
+        meta: I metadati, da cui si ricava il nome canonico delle squadre.
+    """
+    contesto = (comp.chiave, str(comp.gruppo), comp.stagione)
+
+    for evento in eventi:
+        tipo = _nome(evento.get("type"))
+        giocatore = evento.get("player")
+        posizione = evento.get("location")
+        squadra = nome_squadra(meta, _id(evento.get("team")))
+        if not isinstance(giocatore, dict) or not posizione or not squadra:
+            continue
+
+        gid = int(giocatore.get("id", 0))
+
+        if tipo in TIPI_TOCCO:
+            cx, cy = cella(float(posizione[0]), float(posizione[1]))
+            acc.tocchi[(*contesto, gid, squadra, cx, cy)] += 1
+            somma = acc.posizioni.setdefault((comp.chiave, gid, squadra), [0.0, 0.0, 0.0])
+            somma[0] += float(posizione[0])
+            somma[1] += float(posizione[1])
+            somma[2] += 1
+
+        if tipo == "Pass":
+            passaggio = evento.get("pass", {})
+            ricevitore = passaggio.get("recipient")
+            # Solo i passaggi riusciti: l'esito assente significa completato.
+            # Per un passaggio sbagliato il ricevitore non e' un compagno, e un
+            # arco della rete verso un avversario non vuol dire niente.
+            if "outcome" not in passaggio and isinstance(ricevitore, dict):
+                acc.passaggi[(*contesto, squadra, gid, int(ricevitore.get("id", 0)))] += 1
+
+
 def costruisci_tabelle(
     competizioni: Iterable[Competizione], verifica: bool = True
 ) -> dict[str, pd.DataFrame]:
-    """Costruisce le tre tabelle leggendo gli eventi **una volta sola**.
+    """Costruisce le cinque tabelle leggendo gli eventi **una volta sola**.
 
     Le funzioni `costruisci_tiri` e `costruisci_partite_e_presenze` esistono
     ancora e restano utili per lavorare su una tabella alla volta, ma ognuna
@@ -719,12 +959,13 @@ def costruisci_tabelle(
             ufficiale e un'incoerenza interrompe la costruzione.
 
     Returns:
-        Le tabelle ``shots``, ``matches`` e ``player_stats``, con i nomi che
-        corrispondono ai file Parquet.
+        Le cinque tabelle del magazzino, con i nomi che corrispondono ai file
+        Parquet.
     """
     righe_tiri: list[dict[str, Any]] = []
     righe_partite: list[dict[str, Any]] = []
     righe_presenze: list[dict[str, Any]] = []
+    acc = Accumulatori(collections.Counter(), collections.Counter(), {})
 
     for comp in competizioni:
         for match_id, meta in metadati_partite(comp).items():
@@ -733,18 +974,48 @@ def costruisci_tabelle(
                 continue
             eventi: list[dict[str, Any]] = ingest.leggi_json(percorso)
             if verifica:
-                verifica_risultato(match_id, gol_per_squadra(eventi), meta)
+                verifica_risultato(match_id, gol_per_squadra(eventi, meta), meta)
 
             righe_tiri.extend(
                 riga_tiro(e, comp, match_id, meta) for e in eventi if _nome(e.get("type")) == "Shot"
             )
             righe_partite.append(_riga_partita(match_id, comp, meta, eventi))
             righe_presenze.extend(presenze_di_partita(match_id, comp, meta, durata_partita(eventi)))
+            accumula(eventi, comp, acc, meta)
 
     tiri = applica_tipi(righe_tiri)
-    partite = applica_tipi(righe_partite, TIPI_PARTITE)
-    giocatori = costruisci_giocatori(tiri, pd.DataFrame(righe_presenze))
-    return {"shots": tiri, "matches": partite, "player_stats": giocatori}
+    return {
+        "shots": tiri,
+        "matches": applica_tipi(righe_partite, TIPI_PARTITE),
+        "player_stats": costruisci_giocatori(tiri, pd.DataFrame(righe_presenze), acc.posizioni),
+        "passes": tabella_da_conteggi(acc.passaggi, CHIAVE_PASSAGGI, "passaggi", TIPI_PASSAGGI),
+        "touches": tabella_da_conteggi(acc.tocchi, CHIAVE_TOCCHI, "tocchi", TIPI_TOCCHI),
+    }
+
+
+def tabella_da_conteggi(
+    conteggi: collections.Counter[Any],
+    colonne: tuple[str, ...],
+    misura: str,
+    tipi: dict[str, str],
+) -> pd.DataFrame:
+    """Trasforma un contatore con chiavi a tupla in una tabella tipizzata.
+
+    Args:
+        conteggi: Il contatore accumulato durante la lettura.
+        colonne: I nomi delle componenti della chiave, nell'ordine.
+        misura: Il nome della colonna che contiene il conteggio.
+        tipi: Lo schema da applicare.
+
+    Returns:
+        La tabella, con le righe ordinate per chiave cosi' che due esecuzioni
+        producano file identici byte per byte.
+    """
+    righe = [
+        {**dict(zip(colonne, chiave, strict=True)), misura: valore}
+        for chiave, valore in sorted(conteggi.items())
+    ]
+    return applica_tipi(righe, tipi)
 
 
 # ---------------------------------------------------------------------------
@@ -769,8 +1040,10 @@ def _problemi_tiri(tiri: pd.DataFrame) -> list[str]:
     if duplicati:
         problemi.append(f"tiri: {duplicati} identificativi duplicati")
 
-    fuori_x = int(((tiri["x"] < 0) | (tiri["x"] > LUNGHEZZA_CAMPO)).sum())
-    fuori_y = int(((tiri["y"] < 0) | (tiri["y"] > LARGHEZZA_CAMPO)).sum())
+    limite_x = LUNGHEZZA_CAMPO + TOLLERANZA_CAMPO
+    limite_y = LARGHEZZA_CAMPO + TOLLERANZA_CAMPO
+    fuori_x = int(((tiri["x"] < -TOLLERANZA_CAMPO) | (tiri["x"] > limite_x)).sum())
+    fuori_y = int(((tiri["y"] < -TOLLERANZA_CAMPO) | (tiri["y"] > limite_y)).sum())
     if fuori_x or fuori_y:
         problemi.append(f"tiri: {fuori_x} coordinate x e {fuori_y} y fuori dal campo")
 
@@ -862,6 +1135,50 @@ def _problemi_giocatori(giocatori: pd.DataFrame) -> list[str]:
     return problemi
 
 
+def _problemi_rete(passaggi: pd.DataFrame | None, tocchi: pd.DataFrame | None) -> list[str]:
+    """Cerca incoerenze nella rete dei passaggi e nella griglia dei tocchi.
+
+    Args:
+        passaggi: La tabella degli archi, se presente.
+        tocchi: La tabella della densita', se presente.
+
+    Returns:
+        Le anomalie trovate, in chiaro.
+    """
+    problemi: list[str] = []
+
+    if passaggi is not None and not passaggi.empty:
+        auto = int((passaggi["passatore_id"] == passaggi["ricevitore_id"]).sum())
+        if auto:
+            problemi.append(f"passaggi: {auto} archi da un giocatore a se stesso")
+        vuoti = int((passaggi["passaggi"] <= 0).sum())
+        if vuoti:
+            problemi.append(f"passaggi: {vuoti} archi con conteggio non positivo")
+        duplicati = int(passaggi.duplicated(subset=list(CHIAVE_PASSAGGI)).sum())
+        if duplicati:
+            problemi.append(f"passaggi: {duplicati} archi duplicati")
+
+    if tocchi is not None and not tocchi.empty:
+        fuori = int(
+            (
+                (tocchi["cella_x"] < 0)
+                | (tocchi["cella_x"] >= CELLE_X)
+                | (tocchi["cella_y"] < 0)
+                | (tocchi["cella_y"] >= CELLE_Y)
+            ).sum()
+        )
+        if fuori:
+            problemi.append(f"tocchi: {fuori} celle fuori dalla griglia")
+        vuote = int((tocchi["tocchi"] <= 0).sum())
+        if vuote:
+            problemi.append(f"tocchi: {vuote} celle con conteggio non positivo")
+        duplicate = int(tocchi.duplicated(subset=list(CHIAVE_TOCCHI)).sum())
+        if duplicate:
+            problemi.append(f"tocchi: {duplicate} celle duplicate")
+
+    return problemi
+
+
 def controlla(tabelle: dict[str, pd.DataFrame]) -> None:
     """Esegue tutti i controlli di qualita' e interrompe se qualcosa non torna.
 
@@ -880,6 +1197,7 @@ def controlla(tabelle: dict[str, pd.DataFrame]) -> None:
         *_problemi_tiri(tabelle["shots"]),
         *_problemi_partite(tabelle["matches"]),
         *_problemi_giocatori(tabelle["player_stats"]),
+        *_problemi_rete(tabelle.get("passes"), tabelle.get("touches")),
     ]
 
     partite_note = set(tabelle["matches"]["match_id"])
